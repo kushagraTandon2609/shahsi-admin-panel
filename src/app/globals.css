@@ -1,0 +1,292 @@
+@import "tailwindcss";
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+:root {
+  --admin-bg: #f6f6f3;
+  --admin-surface: #ffffff;
+  --admin-surface-soft: #fafafa;
+  --admin-border: #e5e5e0;
+  --admin-border-strong: #cfcfca;
+  --admin-text: #111111;
+  --admin-muted: #6b7280;
+  --admin-soft-text: #9ca3af;
+  --admin-black: #0a0a0a;
+  --admin-black-hover: #1f1f1f;
+  --admin-green: #16a34a;
+  --admin-red: #dc2626;
+  --admin-yellow: #ca8a04;
+  --admin-blue: #2563eb;
+  --admin-radius: 16px;
+  --admin-shadow: 0 1px 2px rgba(15, 23, 42, 0.06),
+    0 8px 24px rgba(15, 23, 42, 0.04);
+  --admin-shadow-soft: 0 1px 3px rgba(15, 23, 42, 0.08);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, rgba(255, 255, 255, 0.9), transparent 32rem),
+    linear-gradient(180deg, #fbfaf6 0%, var(--admin-bg) 45%, #f1f1ee 100%);
+  color: var(--admin-text);
+  font-family:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::selection {
+  background: #111111;
+  color: #ffffff;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+button {
+  transition:
+    background-color 180ms ease,
+    border-color 180ms ease,
+    color 180ms ease,
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    opacity 180ms ease;
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+input,
+textarea,
+select {
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease,
+    background-color 180ms ease;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #111111;
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.08);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
+}
+
+textarea {
+  line-height: 1.65;
+}
+
+table {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+th {
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+td,
+th {
+  vertical-align: middle;
+}
+
+img,
+video {
+  max-width: 100%;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #d4d4d0;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #b9b9b3;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+/* Admin visual polish helpers */
+.admin-shell {
+  background: var(--admin-bg);
+}
+
+.admin-card {
+  border: 1px solid var(--admin-border);
+  background: var(--admin-surface);
+  border-radius: var(--admin-radius);
+  box-shadow: var(--admin-shadow-soft);
+}
+
+.admin-card-hover {
+  transition:
+    box-shadow 180ms ease,
+    transform 180ms ease,
+    border-color 180ms ease;
+}
+
+.admin-card-hover:hover {
+  border-color: var(--admin-border-strong);
+  box-shadow: var(--admin-shadow);
+  transform: translateY(-1px);
+}
+
+.admin-muted {
+  color: var(--admin-muted);
+}
+
+.admin-divider {
+  border-color: var(--admin-border);
+}
+
+.admin-glass {
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.admin-focus-ring {
+  box-shadow: 0 0 0 3px rgba(17, 17, 17, 0.08);
+}
+
+/* Better default look for common Tailwind admin elements */
+.rounded-lg {
+  border-radius: 10px;
+}
+
+.rounded-xl {
+  border-radius: 14px;
+}
+
+.rounded-2xl {
+  border-radius: 18px;
+}
+
+.shadow-sm {
+  box-shadow: var(--admin-shadow-soft);
+}
+
+.border {
+  border-color: var(--admin-border);
+}
+
+.bg-white {
+  background-color: var(--admin-surface);
+}
+
+/* Product/editor content styling */
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  color: #111111;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.prose h1 {
+  font-size: 1.875rem;
+  margin: 1rem 0 0.75rem;
+}
+
+.prose h2 {
+  font-size: 1.5rem;
+  margin: 0.875rem 0 0.625rem;
+}
+
+.prose h3 {
+  font-size: 1.25rem;
+  margin: 0.75rem 0 0.5rem;
+}
+
+.prose p {
+  margin: 0.55rem 0;
+  line-height: 1.7;
+}
+
+.prose ul,
+.prose ol {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.prose ul {
+  list-style: disc;
+}
+
+.prose ol {
+  list-style: decimal;
+}
+
+.prose a {
+  color: var(--admin-blue);
+  text-decoration: underline;
+}
+
+.prose blockquote {
+  margin: 1rem 0;
+  border-left: 4px solid var(--admin-border-strong);
+  padding-left: 1rem;
+  color: var(--admin-muted);
+  font-style: italic;
+}
+
+/* Small animation utility */
+@keyframes adminFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.admin-fade-in {
+  animation: adminFadeIn 220ms ease both;
+}
