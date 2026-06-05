@@ -11,19 +11,26 @@ function makeFormData(
   fieldName: 'images' | 'videos',
   input: FormData | File[] | FileList,
 ) {
-  if (input instanceof FormData) {
-    return input;
-  }
-
   const formData = new FormData();
 
+  if (input instanceof FormData) {
+    input.forEach((value) => {
+      if (value instanceof File) {
+        formData.append(fieldName, value);
+      }
+    });
+
+    return formData;
+  }
+
   Array.from(input).forEach((file) => {
-    formData.append(fieldName, file);
+    if (file instanceof File) {
+      formData.append(fieldName, file);
+    }
   });
 
   return formData;
 }
-
 export const adminCatalogService = {
   // =====================================================
   // PUBLIC CATALOG APIs
@@ -109,23 +116,38 @@ updateProductMetafields: async (productId: string, payload: any) => {
     return res.data;
   },
 
-  uploadImages: async (id: string, input: FormData | File[] | FileList) => {
-    const formData = makeFormData('images', input);
-    const res = await api.post(`/catalog/${id}/images`, formData);
-    return res.data;
-  },
+ uploadImages: async (id: string, input: FormData | File[] | FileList) => {
+  const formData = makeFormData('images', input);
 
-  uploadVideo: async (id: string, input: FormData | File[] | FileList) => {
-    const formData = makeFormData('videos', input);
-    const res = await api.post(`/catalog/${id}/video`, formData);
-    return res.data;
-  },
+  const res = await api.post(
+    `/catalog/${encodeURIComponent(id)}/images`,
+    formData,
+  );
 
-  uploadVideos: async (id: string, input: FormData | File[] | FileList) => {
-    const formData = makeFormData('videos', input);
-    const res = await api.post(`/catalog/${id}/video`, formData);
-    return res.data;
-  },
+  return res.data;
+},
+
+ uploadVideo: async (id: string, input: FormData | File[] | FileList) => {
+  const formData = makeFormData('videos', input);
+
+  const res = await api.post(
+    `/catalog/${encodeURIComponent(id)}/video`,
+    formData,
+  );
+
+  return res.data;
+},
+
+uploadVideos: async (id: string, input: FormData | File[] | FileList) => {
+  const formData = makeFormData('videos', input);
+
+  const res = await api.post(
+    `/catalog/${encodeURIComponent(id)}/video`,
+    formData,
+  );
+
+  return res.data;
+},
 
   deleteImage: async (imageId: string) => {
     const res = await api.delete(`/catalog/images/${imageId}`);
@@ -321,10 +343,14 @@ updateBasicInfo: async (id: string, payload: any) => {
   // IMAGE MANAGEMENT APIs
   // =====================================================
 
-  updateImage: async (imageId: string, payload: any) => {
-    const res = await api.patch(`/admin/catalog/images/${imageId}`, payload);
-    return res.data;
-  },
+ updateImage: async (id: string, imageId: string, payload: any) => {
+  const res = await api.patch(
+    `/admin/catalog/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`,
+    payload,
+  );
+
+  return res.data;
+},
 
   reorderImages: async (id: string, imageIds: string[]) => {
     const res = await api.patch(`/admin/catalog/${id}/images/reorder`, {
@@ -335,13 +361,13 @@ updateBasicInfo: async (id: string, payload: any) => {
   },
 
   setPrimaryImage: async (id: string, imageId: string) => {
-    const res = await api.patch(
-      `/admin/catalog/${id}/images/${imageId}/primary`,
-      {},
-    );
+  const res = await api.patch(
+    `/admin/catalog/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}/primary`,
+    {},
+  );
 
-    return res.data;
-  },
+  return res.data;
+},
 
   // =====================================================
   // VARIANT APIs
