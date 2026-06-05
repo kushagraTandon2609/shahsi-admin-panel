@@ -273,7 +273,10 @@ export default function AdminCatalogPage() {
   setError('');
 
   try {
-    const res = await adminCatalogService.list();
+    const res = await adminCatalogService.list({
+  page: 1,
+  limit: 100,
+});
 
     const list =
       unwrapList(res).length > 0

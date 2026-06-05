@@ -463,21 +463,22 @@ useEffect(() => {
       const key = mediaId || mediaUrl || `media-${index}`;
 
       if (!next[key]) {
-        next[key] = {
-          name:
-            item?.caption ||
-            item?.name ||
-            item?.title ||
-            item?.fileName ||
-            item?.originalName ||
-            '',
-          altText:
-            item?.alt ||
-            item?.altText ||
-            item?.alt_text ||
-            item?.description ||
-            '',
-        };
+      next[key] = {
+  name:
+    item?.alt ||
+    item?.caption ||
+    item?.name ||
+    item?.title ||
+    item?.fileName ||
+    item?.originalName ||
+    '',
+  altText:
+    item?.alt ||
+    item?.altText ||
+    item?.alt_text ||
+    item?.description ||
+    '',
+};
       }
     });
 
@@ -486,6 +487,39 @@ useEffect(() => {
 }, [media]);
   const currentProductId =
     productId || product?.id || product?.productId || product?._id || '';
+
+    async function logToTerminal(
+  action: string,
+  details: any = {},
+  status: number | string = 200,
+  message?: string,
+) {
+  try {
+    await fetch('/api/client-log', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        type: Number(status) >= 400 ? 'API_ERROR' : 'API_SUCCESS',
+        page:
+          typeof window !== 'undefined'
+            ? window.location.pathname
+            : '/admin/catalog',
+        action,
+        message: message || `${action} completed`,
+        status,
+        url: details?.url || '',
+        details: {
+          productId: currentProductId,
+          ...details,
+        },
+      }),
+    });
+  } catch (err) {
+    console.warn('Terminal log failed:', err);
+  }
+}
 
     
 
@@ -508,21 +542,22 @@ useEffect(() => {
       const key = getMediaEditKey(item, index);
 
       if (!next[key]) {
-        next[key] = {
-          name:
-            item?.caption ||
-            item?.name ||
-            item?.title ||
-            item?.fileName ||
-            item?.originalName ||
-            '',
-          altText:
-            item?.alt ||
-            item?.altText ||
-            item?.alt_text ||
-            item?.description ||
-            '',
-        };
+       next[key] = {
+  name:
+    item?.alt ||
+    item?.caption ||
+    item?.name ||
+    item?.title ||
+    item?.fileName ||
+    item?.originalName ||
+    '',
+  altText:
+    item?.alt ||
+    item?.altText ||
+    item?.alt_text ||
+    item?.description ||
+    '',
+};
       }
     });
 
@@ -832,7 +867,7 @@ function getPreviewBreadcrumbUrl() {
     );
   }
 
- function getMediaUrl(item: any) {
+function getMediaUrl(item: any) {
   return (
     item?.url ||
     item?.secureUrl ||
@@ -840,6 +875,7 @@ function getPreviewBreadcrumbUrl() {
     item?.imageUrl ||
     item?.image ||
     item?.videoUrl ||
+    item?.video ||
     item?.path ||
     item?.src ||
     item?.mediaUrl ||
@@ -869,9 +905,14 @@ function isVideoMedia(item: any) {
   return (
     item?.type === 'video' ||
     item?.mediaType === 'video' ||
+    item?.resourceType === 'video' ||
+    item?.resource_type === 'video' ||
     item?.mimeType?.startsWith?.('video/') ||
     item?.fileType?.startsWith?.('video/') ||
-    String(mediaUrl).match(/\.(mp4|webm|mov|avi)$/i)
+    item?.format === 'mp4' ||
+    item?.format === 'webm' ||
+    item?.format === 'mov' ||
+    String(mediaUrl).match(/\.(mp4|webm|mov|avi|m4v)(\?.*)?$/i)
   );
 }
 function filterActiveCategoryTree(items: any[] = []): any[] {
@@ -1268,32 +1309,118 @@ useEffect(() => {
 
 
 async function saveMediaMetadata(item: any, index: number) {
-  if (!currentProductId) {
-    setError('Product ID missing, so metadata cannot be saved.');
-    return;
-  }
-
   const mediaId = getMediaId(item);
   const key = getMediaEditKey(item, index);
   const edit = mediaEdits[key];
 
+  const mediaName =
+    edit?.name ||
+    item?.caption ||
+    item?.name ||
+    item?.title ||
+    item?.fileName ||
+    item?.imageName ||
+    '';
+
+  const mediaAltText =
+    edit?.altText ||
+    item?.altText ||
+    item?.alt_text ||
+    item?.description ||
+    '';
+
+  await logToTerminal(
+    'SAVE_MEDIA_DETAILS_CLICK',
+    {
+      mediaId,
+      index,
+      editKey: key,
+      edit,
+      mediaName,
+      mediaAltText,
+      currentAlt: item?.alt || '',
+      currentAltText: item?.altText || '',
+      currentCaption: item?.caption || '',
+      currentIsPrimary: Boolean(item?.isPrimary),
+    },
+    200,
+    'Save details button clicked',
+  );
+
   if (!mediaId) {
     setError('Media ID is missing, so metadata cannot be saved.');
+
+    await logToTerminal(
+      'SAVE_MEDIA_DETAILS_FAILED',
+      {
+        reason: 'Media ID missing',
+        item,
+      },
+      400,
+      'Media ID missing',
+    );
+
     return;
   }
 
-  try {
-    await adminCatalogService.updateImage(currentProductId, mediaId, {
-      altText: edit?.altText || '',
-      imageName: edit?.name || '',
-      sortOrder: index,
-      isPrimary: Boolean(item?.isPrimary),
-    });
+  setSaving(true);
+  setError('');
 
-    await reloadProduct(currentProductId);
+  try {
+  const payload = {
+  alt: mediaAltText || mediaName,
+  position: index,
+  isPrimary: Boolean(item?.isPrimary),
+};
+
+    await logToTerminal(
+      'SAVE_MEDIA_DETAILS_REQUEST',
+      {
+        mediaId,
+        payload,
+        url: `/admin/catalog/images/${mediaId}`,
+      },
+      200,
+      'Save media details API request started',
+    );
+
+    const res = await adminCatalogService.updateImage(mediaId, payload);
+
+    await logToTerminal(
+      'SAVE_MEDIA_DETAILS_SUCCESS',
+      {
+        mediaId,
+        payload,
+        response: res,
+        url: `/admin/catalog/images/${mediaId}`,
+      },
+      200,
+      'Save media details API success 200',
+    );
+
+    if (currentProductId) {
+      await reloadProduct(currentProductId);
+    }
+
     await onReload?.();
   } catch (err: any) {
-    setError(getApiErrorMessage(err));
+    const message = getApiErrorMessage(err);
+
+    await logToTerminal(
+      'SAVE_MEDIA_DETAILS_ERROR',
+      {
+        mediaId,
+        errorMessage: message,
+        response: err?.response?.data || err?.message || err,
+        url: `/admin/catalog/images/${mediaId}`,
+      },
+      err?.response?.status || 500,
+      message,
+    );
+
+    setError(message);
+  } finally {
+    setSaving(false);
   }
 }
 
@@ -2226,13 +2353,48 @@ function clearSelectedMedia() {
 }
 
 async function uploadSelectedMedia() {
+  await logToTerminal(
+    'UPLOAD_MEDIA_CLICK',
+    {
+      selectedMediaCount: selectedMedia.length,
+      selectedFiles: selectedMedia.map((item) => ({
+        name: item.file.name,
+        type: item.file.type,
+        size: item.file.size,
+        altText: item.altText,
+      })),
+    },
+    200,
+    'Upload media done button clicked',
+  );
+
   if (!currentProductId) {
     setError('Create the product first, then upload media.');
+
+    await logToTerminal(
+      'UPLOAD_MEDIA_FAILED',
+      {
+        reason: 'Product ID missing',
+      },
+      400,
+      'Product ID missing',
+    );
+
     return;
   }
 
   if (selectedMedia.length === 0) {
     setError('Select at least 1 media file to upload.');
+
+    await logToTerminal(
+      'UPLOAD_MEDIA_FAILED',
+      {
+        reason: 'No media selected',
+      },
+      400,
+      'No media selected',
+    );
+
     return;
   }
 
@@ -2240,6 +2402,16 @@ async function uploadSelectedMedia() {
 
   if (validMedia.length === 0) {
     setError('Selected media files are invalid. Please select files again.');
+
+    await logToTerminal(
+      'UPLOAD_MEDIA_FAILED',
+      {
+        reason: 'Selected media files invalid',
+      },
+      400,
+      'Selected media files invalid',
+    );
+
     return;
   }
 
@@ -2247,20 +2419,132 @@ async function uploadSelectedMedia() {
   setError('');
 
   try {
-    const imageFiles = validMedia
-      .filter((item) => item.file.type.startsWith('image/'))
-      .map((item) => item.file);
+    const imageItems = validMedia.filter((item) =>
+      item.file.type.startsWith('image/'),
+    );
 
-    const videoFiles = validMedia
-      .filter((item) => item.file.type.startsWith('video/'))
-      .map((item) => item.file);
+    const videoItems = validMedia.filter((item) =>
+      item.file.type.startsWith('video/'),
+    );
 
-    if (imageFiles.length > 0) {
-      await adminCatalogService.uploadImages(currentProductId, imageFiles);
+    await logToTerminal(
+      'UPLOAD_MEDIA_REQUEST',
+      {
+        imageCount: imageItems.length,
+        videoCount: videoItems.length,
+        imageFiles: imageItems.map((item) => item.file.name),
+        videoFiles: videoItems.map((item) => item.file.name),
+      },
+      200,
+      'Upload media API request started',
+    );
+
+    let imageUploadResponse: any = null;
+    let videoUploadResponse: any = null;
+
+    if (imageItems.length > 0) {
+      imageUploadResponse = await adminCatalogService.uploadImages(
+        currentProductId,
+        imageItems.map((item) => item.file),
+      );
+
+      await logToTerminal(
+        'UPLOAD_IMAGES_SUCCESS',
+        {
+          response: imageUploadResponse,
+          url: `/catalog/${currentProductId}/images`,
+        },
+        200,
+        'Upload images API success 200',
+      );
     }
 
-    if (videoFiles.length > 0) {
-      await adminCatalogService.uploadVideos(currentProductId, videoFiles);
+    if (videoItems.length > 0) {
+      videoUploadResponse = await adminCatalogService.uploadVideos(
+        currentProductId,
+        videoItems.map((item) => item.file),
+      );
+
+      await logToTerminal(
+        'UPLOAD_VIDEOS_SUCCESS',
+        {
+          response: videoUploadResponse,
+          url: `/catalog/${currentProductId}/video`,
+        },
+        200,
+        'Upload videos API success 200',
+      );
+    }
+
+    const uploadedImages = normalizeMediaList(imageUploadResponse);
+    const uploadedVideos = normalizeMediaList(videoUploadResponse);
+
+    for (let i = 0; i < uploadedImages.length; i += 1) {
+      const uploaded = uploadedImages[i];
+      const selected = imageItems[i];
+      const imageId = getMediaId(uploaded);
+
+      if (!imageId || !selected) continue;
+const payload = {
+  alt: selected.altText || selected.name || selected.file.name,
+  position: media.length + i,
+  isPrimary: media.length === 0 && i === 0,
+};
+
+      const updateRes = await adminCatalogService.updateImage(imageId, payload);
+
+      await logToTerminal(
+        'UPDATE_UPLOADED_IMAGE_METADATA_SUCCESS',
+        {
+          imageId,
+          payload,
+          response: updateRes,
+          url: `/admin/catalog/images/${imageId}`,
+        },
+        200,
+        'Update uploaded image metadata API success 200',
+      );
+    }
+
+    for (let i = 0; i < uploadedVideos.length; i += 1) {
+      const uploaded = uploadedVideos[i];
+      const selected = videoItems[i];
+      const videoId = getMediaId(uploaded);
+
+      if (!videoId || !selected) {
+        await logToTerminal(
+          'UPDATE_UPLOADED_VIDEO_METADATA_SKIPPED',
+          {
+            videoId,
+            uploaded,
+            selectedFile: selected?.file?.name,
+          },
+          200,
+          'Uploaded video metadata skipped',
+        );
+
+        continue;
+      }
+
+const payload = {
+  alt: selected.altText || selected.name || selected.file.name,
+  position: media.length + imageItems.length + i,
+  isPrimary: false,
+};
+
+      const updateRes = await adminCatalogService.updateImage(videoId, payload);
+
+      await logToTerminal(
+        'UPDATE_UPLOADED_VIDEO_METADATA_SUCCESS',
+        {
+          videoId,
+          payload,
+          response: updateRes,
+          url: `/admin/catalog/images/${videoId}`,
+        },
+        200,
+        'Update uploaded video metadata API success 200',
+      );
     }
 
     clearSelectedMedia();
@@ -2268,59 +2552,284 @@ async function uploadSelectedMedia() {
 
     await reloadProduct(currentProductId);
     await onReload?.();
+
+    await logToTerminal(
+      'UPLOAD_MEDIA_SUCCESS',
+      {
+        uploadedImagesCount: uploadedImages.length,
+        uploadedVideosCount: uploadedVideos.length,
+        uploadedImages,
+        uploadedVideos,
+      },
+      200,
+      'Upload media flow completed successfully',
+    );
   } catch (err: any) {
-    setError(getApiErrorMessage(err));
+    const message = getApiErrorMessage(err);
+
+    await logToTerminal(
+      'UPLOAD_MEDIA_ERROR',
+      {
+        errorMessage: message,
+        response: err?.response?.data || err?.message || err,
+      },
+      err?.response?.status || 500,
+      message,
+    );
+
+    setError(message);
   } finally {
     setSaving(false);
   }
 }
 
 async function saveMediaOrder() {
-    if (!currentProductId) return;
+  const imageIds = media
+    .map((item) => getMediaId(item))
+    .map((id) => String(id || '').trim())
+    .filter(Boolean);
 
-    const imageIds = media.map((item) => getMediaId(item)).filter(Boolean);
+  await logToTerminal(
+    'SAVE_MEDIA_ORDER_CLICK',
+    {
+      mediaCount: media.length,
+      imageIds,
+      media: media.map((item, index) => ({
+        index,
+        id: getMediaId(item),
+        url: getMediaUrl(item),
+        isPrimary: item?.isPrimary,
+      })),
+    },
+    200,
+    'Save order button clicked',
+  );
 
-    if (imageIds.length === 0) {
-      setError('Reorder save karne ke liye imageIds nahi mil rahi.');
-      return;
-    }
+  if (!currentProductId) {
+    setError('Product ID missing, order save nahi ho sakta.');
 
-    try {
-      await adminCatalogService.reorderImages(currentProductId, imageIds);
-      await reloadProduct(currentProductId);
-      await onReload?.();
-    } catch (err: any) {
-      setError(getApiErrorMessage(err));
-    }
+    await logToTerminal(
+      'SAVE_MEDIA_ORDER_FAILED',
+      {
+        reason: 'Product ID missing',
+      },
+      400,
+      'Product ID missing',
+    );
+
+    return;
   }
 
- async function deleteImage(imageId: string) {
-  if (!confirm('Delete this image?')) return;
+  if (imageIds.length === 0) {
+    setError('Reorder save karne ke liye imageIds nahi mil rahi.');
+
+    await logToTerminal(
+      'SAVE_MEDIA_ORDER_FAILED',
+      {
+        reason: 'Image IDs empty',
+        media,
+      },
+      400,
+      'Image IDs empty',
+    );
+
+    return;
+  }
+
+  setSaving(true);
+  setError('');
 
   try {
-    await adminCatalogService.deleteImage(imageId);
+    const res = await adminCatalogService.reorderImages(
+      currentProductId,
+      imageIds,
+    );
+
+    await logToTerminal(
+      'SAVE_MEDIA_ORDER_SUCCESS',
+      {
+        imageIds,
+        response: res,
+        url: `/admin/catalog/${currentProductId}/images/reorder`,
+      },
+      200,
+      'Save media order API success 200',
+    );
+
+    await reloadProduct(currentProductId);
+    await onReload?.();
+  } catch (err: any) {
+    const message = getApiErrorMessage(err);
+
+    await logToTerminal(
+      'SAVE_MEDIA_ORDER_ERROR',
+      {
+        imageIds,
+        errorMessage: message,
+        response: err?.response?.data || err?.message || err,
+        url: `/admin/catalog/${currentProductId}/images/reorder`,
+      },
+      err?.response?.status || 500,
+      message,
+    );
+
+    setError(message);
+  } finally {
+    setSaving(false);
+  }
+}
+
+async function deleteImage(imageId: string) {
+  await logToTerminal(
+    'DELETE_IMAGE_CLICK',
+    {
+      imageId,
+      url: `/catalog/images/${imageId}`,
+    },
+    200,
+    'Delete image button clicked',
+  );
+
+  if (!imageId) {
+    await logToTerminal(
+      'DELETE_IMAGE_FAILED',
+      {
+        reason: 'Image ID missing',
+      },
+      400,
+      'Image ID missing',
+    );
+
+    return;
+  }
+
+  if (!confirm('Delete this image?')) {
+    await logToTerminal(
+      'DELETE_IMAGE_CANCELLED',
+      {
+        imageId,
+      },
+      200,
+      'Delete image cancelled by user',
+    );
+
+    return;
+  }
+
+  setSaving(true);
+  setError('');
+
+  try {
+    const res = await adminCatalogService.deleteImage(imageId);
+
+    await logToTerminal(
+      'DELETE_IMAGE_SUCCESS',
+      {
+        imageId,
+        response: res,
+        url: `/catalog/images/${imageId}`,
+      },
+      200,
+      'Delete image API success 200',
+    );
 
     if (currentProductId) {
       await reloadProduct(currentProductId);
     }
 
+    setActiveMediaIndex(null);
     await onReload?.();
   } catch (err: any) {
-    setError(getApiErrorMessage(err));
+    const message = getApiErrorMessage(err);
+
+    await logToTerminal(
+      'DELETE_IMAGE_ERROR',
+      {
+        imageId,
+        errorMessage: message,
+        response: err?.response?.data || err?.message || err,
+        url: `/catalog/images/${imageId}`,
+      },
+      err?.response?.status || 500,
+      message,
+    );
+
+    setError(message);
+  } finally {
+    setSaving(false);
   }
 }
 
-  async function setPrimaryImage(imageId: string) {
-    if (!currentProductId) return;
+async function setPrimaryImage(imageId: string) {
+  await logToTerminal(
+    'SET_PRIMARY_IMAGE_CLICK',
+    {
+      imageId,
+      url: `/admin/catalog/${currentProductId}/images/${imageId}/primary`,
+    },
+    200,
+    'Primary image button clicked',
+  );
 
-    try {
-      await adminCatalogService.setPrimaryImage(currentProductId, imageId);
-      await reloadProduct(currentProductId);
-      await onReload?.();
-    } catch (err: any) {
-      setError(getApiErrorMessage(err));
-    }
+  if (!currentProductId || !imageId) {
+    setError('Product ID ya image ID missing hai.');
+
+    await logToTerminal(
+      'SET_PRIMARY_IMAGE_FAILED',
+      {
+        reason: 'Product ID or image ID missing',
+        productId: currentProductId,
+        imageId,
+      },
+      400,
+      'Product ID or image ID missing',
+    );
+
+    return;
   }
+
+  setSaving(true);
+  setError('');
+
+  try {
+    const res = await adminCatalogService.setPrimaryImage(
+      currentProductId,
+      imageId,
+    );
+
+    await logToTerminal(
+      'SET_PRIMARY_IMAGE_SUCCESS',
+      {
+        imageId,
+        response: res,
+        url: `/admin/catalog/${currentProductId}/images/${imageId}/primary`,
+      },
+      200,
+      'Primary image API success 200',
+    );
+
+    await reloadProduct(currentProductId);
+    await onReload?.();
+  } catch (err: any) {
+    const message = getApiErrorMessage(err);
+
+    await logToTerminal(
+      'SET_PRIMARY_IMAGE_ERROR',
+      {
+        imageId,
+        errorMessage: message,
+        response: err?.response?.data || err?.message || err,
+        url: `/admin/catalog/${currentProductId}/images/${imageId}/primary`,
+      },
+      err?.response?.status || 500,
+      message,
+    );
+
+    setError(message);
+  } finally {
+    setSaving(false);
+  }
+}
 
 async function publishProduct() {
   if (!currentProductId) return;
@@ -2635,13 +3144,14 @@ async function unpublishProduct() {
 
     {media.length > 0 && (
       <div className="mt-4 flex justify-end">
-        <Button
-          variant="secondary"
-          onClick={saveMediaOrder}
-          disabled={media.length === 0}
-        >
-          Save order
-        </Button>
+       <Button
+  type="button"
+  variant="secondary"
+  onClick={saveMediaOrder}
+  disabled={saving || media.length === 0}
+>
+  {saving ? 'Saving...' : 'Save order'}
+</Button>
       </div>
     )}
 
@@ -2736,20 +3246,14 @@ async function unpublishProduct() {
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                    <Button
-                      disabled={!mediaId}
-                      onClick={() => saveMediaMetadata(item, activeMediaIndex)}
-                    >
-                      Save details
-                    </Button>
+                   <Button
+  disabled={saving || !mediaId}
+  onClick={() => saveMediaMetadata(item, activeMediaIndex)}
+>
+  {saving ? 'Saving...' : 'Save details'}
+</Button>
 
-                    <Button
-                      disabled={!mediaId}
-                      variant="secondary"
-                      onClick={() => setPrimaryImage(mediaId)}
-                    >
-                      Primary
-                    </Button>
+   
 
                     <Button
                       disabled={!mediaId}

@@ -11,17 +11,21 @@ function makeFormData(
   fieldName: 'images' | 'video' | 'videos',
   input: FormData | File[] | FileList,
 ) {
-  const formData = new FormData();
-
   if (input instanceof FormData) {
-    input.forEach((value) => {
+    const formData = new FormData();
+
+    input.forEach((value, key) => {
       if (value instanceof File) {
         formData.append(fieldName, value);
+      } else {
+        formData.append(key, value);
       }
     });
 
     return formData;
   }
+
+  const formData = new FormData();
 
   Array.from(input).forEach((file) => {
     if (file instanceof File) {
@@ -182,7 +186,7 @@ export const adminCatalogService = {
 
     for (const file of files) {
       const formData = new FormData();
-      formData.append('video', file);
+     formData.append('file', file);
 
       const res = await api.post(
         `/catalog/${encodeURIComponent(id)}/video`,
@@ -196,36 +200,30 @@ export const adminCatalogService = {
   },
 
   uploadVideos: async (id: string, input: FormData | File[] | FileList) => {
-    const files = getFilesFromInput(input);
+  const files = getFilesFromInput(input);
 
-    if (files.length === 0) {
-      const formData = makeFormData('video', input);
+  const formData = new FormData();
 
-      const res = await api.post(
-        `/catalog/${encodeURIComponent(id)}/video`,
-        formData,
-      );
-
-      return res.data;
-    }
-
-    const results = [];
-
+  if (files.length > 0) {
     for (const file of files) {
-      const formData = new FormData();
-      formData.append('video', file);
-
-      const res = await api.post(
-        `/catalog/${encodeURIComponent(id)}/video`,
-        formData,
-      );
-
-      results.push(res.data);
+      // Backend Swagger ke according field name "videos" hai
+      formData.append('videos', file);
     }
+  } else if (input instanceof FormData) {
+    input.forEach((value) => {
+      if (value instanceof File) {
+        formData.append('videos', value);
+      }
+    });
+  }
 
-    return results.length === 1 ? results[0] : results;
-  },
+  const res = await api.post(
+    `/catalog/${encodeURIComponent(id)}/video`,
+    formData,
+  );
 
+  return res.data;
+},
   deleteImage: async (imageId: string) => {
     const res = await api.delete(
       `/catalog/images/${encodeURIComponent(imageId)}`,
@@ -458,61 +456,29 @@ export const adminCatalogService = {
   // PATCH /admin/catalog/{id}/images/{imageId}/primary
   // =====================================================
 
-  updateImage: async (
-    idOrImageId: string,
-    imageIdOrPayload: string | any,
-    maybePayload?: any,
-  ) => {
-    if (maybePayload === undefined) {
-      const res = await api.patch(
-        `/admin/catalog/images/${encodeURIComponent(idOrImageId)}`,
-        imageIdOrPayload,
-      );
-      return res.data;
-    }
+  updateImage: async (imageId: string, payload: any) => {
+  const res = await api.patch(
+    `/admin/catalog/images/${encodeURIComponent(imageId)}`,
+    payload,
+  );
 
-    const res = await api.patch(
-      `/admin/catalog/${encodeURIComponent(idOrImageId)}/images/${encodeURIComponent(
-        String(imageIdOrPayload),
-      )}`,
-      maybePayload,
-    );
+  return res.data;
+},
 
-    return res.data;
-  },
+reorderImages: async (id: string, imageIds: string[]) => {
+  const cleanImageIds = imageIds
+    .map((item) => String(item || '').trim())
+    .filter(Boolean);
 
-  reorderImages: async (
-    id: string,
-    images:
-      | string[]
-      | {
-          imageId: string;
-          position: number;
-        }[],
-  ) => {
-    const normalizedImages = images.map((item: any, index: number) => {
-      if (typeof item === 'string') {
-        return {
-          imageId: item,
-          position: index,
-        };
-      }
+  const res = await api.patch(
+    `/admin/catalog/${encodeURIComponent(id)}/images/reorder`,
+    {
+      imageIds: cleanImageIds,
+    },
+  );
 
-      return {
-        imageId: item.imageId,
-        position: item.position ?? index,
-      };
-    });
-
-    const res = await api.patch(
-      `/admin/catalog/${encodeURIComponent(id)}/images/reorder`,
-      {
-        images: normalizedImages,
-      },
-    );
-
-    return res.data;
-  },
+  return res.data;
+},
 
   setPrimaryImage: async (id: string, imageId: string) => {
     const res = await api.patch(

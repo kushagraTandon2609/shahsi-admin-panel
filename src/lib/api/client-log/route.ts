@@ -1,16 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 
-type ClientLogPayload = {
-  type?: string;
-  message?: string;
-  status?: number;
-  url?: string;
-  page?: string;
-  time?: string;
-  details?: any;
-};
-
-function safeStringify(value: any) {
+function safeJson(value: any) {
   try {
     return JSON.stringify(value, null, 2);
   } catch {
@@ -18,59 +8,42 @@ function safeStringify(value: any) {
   }
 }
 
-function getBadge(type?: string) {
-  const value = String(type || 'CLIENT_LOG').toUpperCase();
-
-  if (value.includes('API')) return 'API ERROR';
-  if (value.includes('BROWSER')) return 'BROWSER ERROR';
-  if (value.includes('PROMISE')) return 'PROMISE ERROR';
-
-  return value;
-}
-
 export async function POST(req: NextRequest) {
   try {
-    const payload = (await req.json()) as ClientLogPayload;
+    const body = await req.json();
 
-    const badge = getBadge(payload.type);
-    const time = payload.time || new Date().toISOString();
+    const type = body?.type || 'CLIENT_LOG';
+    const status = body?.status || 'No status';
+    const isError =
+      String(type).toUpperCase().includes('ERROR') ||
+      body?.level === 'error' ||
+      Number(status) >= 400;
 
-    console.log('\n');
-    console.log('======================================================');
-    console.log(`🚨 FRONTEND ${badge}`);
-    console.log('======================================================');
-    console.log(`Time:    ${time}`);
-    console.log(`Page:    ${payload.page || '-'}`);
-    console.log(`Status:  ${payload.status || '-'}`);
-    console.log(`URL:     ${payload.url || '-'}`);
-    console.log(`Message: ${payload.message || '-'}`);
+    const log = isError ? console.error : console.log;
+    const title = isError ? 'FRONTEND CLIENT ERROR' : 'FRONTEND CLIENT LOG';
 
-    if (payload.details) {
-      console.log('Details:');
-      console.log(safeStringify(payload.details));
-    }
+    log('');
+    log(`================ ${title} ================`);
+    log('Time:', new Date().toISOString());
+    log('Page:', body?.page || 'unknown');
+    log('Type:', type);
+    log('Action:', body?.action || 'No action');
+    log('Message:', body?.message || 'No message');
+    log('Status:', status);
+    log('URL:', body?.url || 'No URL');
+    log('Details:', safeJson(body?.details || {}));
+    log('======================================================');
+    log('');
 
-    console.log('======================================================');
-    console.log('\n');
+    return NextResponse.json({ ok: true, success: true });
+  } catch (error) {
+    console.error('');
+    console.error('================ CLIENT LOG ROUTE ERROR ================');
+    console.error('Time:', new Date().toISOString());
+    console.error('Failed to log client message:', error);
+    console.error('========================================================');
+    console.error('');
 
-    return NextResponse.json({
-      success: true,
-    });
-  } catch (error: any) {
-    console.error('\n');
-    console.error('======================================================');
-    console.error('🚨 CLIENT LOG ROUTE FAILED');
-    console.error('======================================================');
-    console.error(error?.message || error);
-    console.error('======================================================');
-    console.error('\n');
-
-    return NextResponse.json(
-      {
-        success: false,
-        error: 'Failed to write client log',
-      },
-      { status: 500 },
-    );
+    return NextResponse.json({ ok: false }, { status: 500 });
   }
 }
