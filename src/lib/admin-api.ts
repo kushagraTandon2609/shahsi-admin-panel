@@ -22,6 +22,29 @@ function isFile(value: unknown): value is File {
   return typeof File !== 'undefined' && value instanceof File;
 }
 
+function removeHeader(headers: any, key: string) {
+  if (!headers) return;
+
+  if (typeof headers.delete === 'function') {
+    headers.delete(key);
+    return;
+  }
+
+  delete headers[key];
+  delete headers[key.toLowerCase()];
+}
+
+function setHeader(headers: any, key: string, value: string) {
+  if (!headers) return;
+
+  if (typeof headers.set === 'function') {
+    headers.set(key, value);
+    return;
+  }
+
+  headers[key] = value;
+}
+
 function sanitizeObject(value: any, depth = 0): any {
   if (depth > 4) return '[Max depth reached]';
 
@@ -142,16 +165,22 @@ api.interceptors.request.use((config: InternalAxiosRequestConfig) => {
   config.headers = config.headers || {};
 
   if (token) {
-    config.headers.Authorization = `Bearer ${token}`;
+    setHeader(config.headers, 'Authorization', `Bearer ${token}`);
   }
 
-  config.headers.Accept = 'application/json';
+  setHeader(config.headers, 'Accept', 'application/json');
 
   if (isFormData(config.data)) {
-    delete config.headers['Content-Type'];
-    delete config.headers['content-type'];
+    removeHeader(config.headers, 'Content-Type');
+    removeHeader(config.headers, 'content-type');
+
+    config.transformRequest = [
+      (data) => {
+        return data;
+      },
+    ];
   } else if (config.data !== undefined) {
-    config.headers['Content-Type'] = 'application/json';
+    setHeader(config.headers, 'Content-Type', 'application/json');
   }
 
   return config;

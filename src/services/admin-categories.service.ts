@@ -84,6 +84,10 @@ function boolToYesNo(value?: boolean) {
   return value ? 'yes' : 'no';
 }
 
+function isFile(value: unknown): value is File {
+  return typeof File !== 'undefined' && value instanceof File;
+}
+
 function buildCategoryProductsPayload(
   payload: AssignCategoryProductsPayload,
 ): AssignCategoryProductsPayload {
@@ -201,13 +205,20 @@ export const adminCategoriesService = {
       altText?: string;
     },
   ) => {
-    const formData = new FormData();
-
-    if (payload.file) {
-      formData.append('image', payload.file);
+    if (!payload.file || !isFile(payload.file)) {
+      throw new Error('Please select a valid image file before uploading.');
     }
 
-    formData.append('name', payload.name || '');
+    const formData = new FormData();
+
+    // Backend category image upload expects actual binary image file.
+    // Do not pass previewUrl/blob URL/string here.
+    formData.append('image', payload.file);
+
+    // Sending both naming styles keeps compatibility with backend DTO.
+    formData.append('imageName', payload.name || payload.file.name || '');
+    formData.append('imageAltText', payload.altText || '');
+    formData.append('name', payload.name || payload.file.name || '');
     formData.append('altText', payload.altText || '');
 
     const res = await api.post(
@@ -386,21 +397,41 @@ export const adminCategoriesService = {
     return res.data;
   },
 
-  getCollectionProducts: async (
-    slug: string,
-    params?: CategoryProductsParams,
-  ) => {
-    return adminCategoriesService.getCategoryProducts(slug, params);
+  getCollectionProducts: async (slug: string) => {
+    const res = await api.get(
+      `/admin/catalog/categories/${encodeURIComponent(slug)}/products`,
+      {
+        params: {
+          page: 1,
+          limit: 20,
+          sortBy: 'manual',
+          sortDirection: 'asc',
+        },
+      },
+    );
+
+    return res.data;
   },
 
   updateCollectionProducts: async (
     slug: string,
     payload: AssignCategoryProductsPayload,
   ) => {
-    return adminCategoriesService.updateCategoryProducts(slug, payload);
+    const res = await api.patch(
+      `/admin/catalog/categories/${encodeURIComponent(slug)}/products`,
+      buildCategoryProductsPayload(payload),
+    );
+
+    return res.data;
   },
 
   removeCollectionProduct: async (slug: string, productId: string) => {
-    return adminCategoriesService.removeCategoryProduct(slug, productId);
+    const res = await api.delete(
+      `/admin/catalog/categories/${encodeURIComponent(
+        slug,
+      )}/products/${encodeURIComponent(productId)}`,
+    );
+
+    return res.data;
   },
 };

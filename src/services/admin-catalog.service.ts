@@ -8,7 +8,7 @@ type VariantStockPayload = {
 };
 
 function makeFormData(
-  fieldName: 'images' | 'videos',
+  fieldName: 'images' | 'video' | 'videos',
   input: FormData | File[] | FileList,
 ) {
   const formData = new FormData();
@@ -31,6 +31,23 @@ function makeFormData(
 
   return formData;
 }
+
+function getFilesFromInput(input: FormData | File[] | FileList) {
+  if (input instanceof FormData) {
+    const files: File[] = [];
+
+    input.forEach((value) => {
+      if (value instanceof File) {
+        files.push(value);
+      }
+    });
+
+    return files;
+  }
+
+  return Array.from(input).filter((file): file is File => file instanceof File);
+}
+
 export const adminCatalogService = {
   // =====================================================
   // PUBLIC CATALOG APIs
@@ -45,19 +62,21 @@ export const adminCatalogService = {
     const res = await api.get('/catalog', { params });
     return res.data;
   },
-updateInventory: async (
-  productId: string,
-  payload: {
-    stock: number;
-  },
-) => {
-  const res = await api.patch(
-    `/admin/catalog/${productId}/inventory`,
-    payload,
-  );
 
-  return res.data;
-},
+  updateInventory: async (
+    productId: string,
+    payload: {
+      stock: number;
+    },
+  ) => {
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(productId)}/inventory`,
+      payload,
+    );
+
+    return res.data;
+  },
+
   filter: async (params?: QueryParams) => {
     const res = await api.get('/catalog/filter', { params });
     return res.data;
@@ -68,94 +87,154 @@ updateInventory: async (
     return res.data;
   },
 
-getProductPicker: async (params?: any) => {
-  const res = await api.get('/admin/catalog/products/picker', {
-    params: {
-      search: params?.search || undefined,
-      searchBy: params?.searchBy || 'all',
-      category: params?.category || undefined,
-      collection: params?.collection || undefined,
-      type: params?.type || undefined,
-      tag: params?.tag || undefined,
-      vendor: params?.vendor || undefined,
-      status: params?.status || 'all',
-      page: params?.page || 1,
-      limit: params?.limit || 50,
-    },
-  });
+  getProductPicker: async (params?: any) => {
+    const res = await api.get('/admin/catalog/products/picker', {
+      params: {
+        search: params?.search || undefined,
+        searchBy: params?.searchBy || 'all',
+        category: params?.category || undefined,
+        collection: params?.collection || undefined,
+        type: params?.type || undefined,
+        tag: params?.tag || undefined,
+        vendor: params?.vendor || undefined,
+        status: params?.status || 'all',
+        page: params?.page || 1,
+        limit: params?.limit || 50,
+      },
+    });
 
-  return res.data;
-},
+    return res.data;
+  },
 
-updateProductMetafields: async (productId: string, payload: any) => {
-  const res = await api.patch(
-    `/admin/catalog/${encodeURIComponent(productId)}/metafields`,
-    payload,
-  );
+  updateProductMetafields: async (productId: string, payload: any) => {
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(productId)}/metafields`,
+      payload,
+    );
 
-  return res.data;
-},
+    return res.data;
+  },
 
   getBySlug: async (slug: string) => {
-    const res = await api.get(`/catalog/slug/${slug}`);
+    const res = await api.get(`/catalog/slug/${encodeURIComponent(slug)}`);
     return res.data;
   },
 
   publicDetail: async (id: string) => {
-    const res = await api.get(`/catalog/${id}`);
+    const res = await api.get(`/catalog/${encodeURIComponent(id)}`);
     return res.data;
   },
 
   update: async (id: string, payload: any) => {
-    const res = await api.patch(`/catalog/${id}`, payload);
+    const res = await api.patch(`/catalog/${encodeURIComponent(id)}`, payload);
     return res.data;
   },
 
   delete: async (id: string) => {
-    const res = await api.delete(`/catalog/${id}`);
+    const res = await api.delete(`/catalog/${encodeURIComponent(id)}`);
     return res.data;
   },
 
- uploadImages: async (id: string, input: FormData | File[] | FileList) => {
-  const formData = makeFormData('images', input);
+  // =====================================================
+  // PUBLIC PRODUCT MEDIA UPLOAD APIs
+  // Swagger:
+  // POST /catalog/{id}/images
+  // POST /catalog/{id}/video
+  // =====================================================
 
-  const res = await api.post(
-    `/catalog/${encodeURIComponent(id)}/images`,
-    formData,
-  );
+  uploadImages: async (id: string, input: FormData | File[] | FileList) => {
+    const formData = makeFormData('images', input);
 
-  return res.data;
-},
+    const res = await api.post(
+      `/catalog/${encodeURIComponent(id)}/images`,
+      formData,
+    );
 
- uploadVideo: async (id: string, input: FormData | File[] | FileList) => {
-  const formData = makeFormData('videos', input);
+    return res.data;
+  },
 
-  const res = await api.post(
-    `/catalog/${encodeURIComponent(id)}/video`,
-    formData,
-  );
+  uploadImage: async (id: string, input: FormData | File[] | FileList) => {
+    const formData = makeFormData('images', input);
 
-  return res.data;
-},
+    const res = await api.post(
+      `/catalog/${encodeURIComponent(id)}/images`,
+      formData,
+    );
 
-uploadVideos: async (id: string, input: FormData | File[] | FileList) => {
-  const formData = makeFormData('videos', input);
+    return res.data;
+  },
 
-  const res = await api.post(
-    `/catalog/${encodeURIComponent(id)}/video`,
-    formData,
-  );
+  uploadVideo: async (id: string, input: FormData | File[] | FileList) => {
+    const files = getFilesFromInput(input);
 
-  return res.data;
-},
+    if (files.length === 0) {
+      const formData = makeFormData('video', input);
+
+      const res = await api.post(
+        `/catalog/${encodeURIComponent(id)}/video`,
+        formData,
+      );
+
+      return res.data;
+    }
+
+    const results = [];
+
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append('video', file);
+
+      const res = await api.post(
+        `/catalog/${encodeURIComponent(id)}/video`,
+        formData,
+      );
+
+      results.push(res.data);
+    }
+
+    return results.length === 1 ? results[0] : results;
+  },
+
+  uploadVideos: async (id: string, input: FormData | File[] | FileList) => {
+    const files = getFilesFromInput(input);
+
+    if (files.length === 0) {
+      const formData = makeFormData('video', input);
+
+      const res = await api.post(
+        `/catalog/${encodeURIComponent(id)}/video`,
+        formData,
+      );
+
+      return res.data;
+    }
+
+    const results = [];
+
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append('video', file);
+
+      const res = await api.post(
+        `/catalog/${encodeURIComponent(id)}/video`,
+        formData,
+      );
+
+      results.push(res.data);
+    }
+
+    return results.length === 1 ? results[0] : results;
+  },
 
   deleteImage: async (imageId: string) => {
-    const res = await api.delete(`/catalog/images/${imageId}`);
+    const res = await api.delete(
+      `/catalog/images/${encodeURIComponent(imageId)}`,
+    );
     return res.data;
   },
 
   fit: async (id: string, payload: any = {}) => {
-    const res = await api.post(`/catalog/${id}/fit`, payload);
+    const res = await api.post(`/catalog/${encodeURIComponent(id)}/fit`, payload);
     return res.data;
   },
 
@@ -174,25 +253,29 @@ uploadVideos: async (id: string, input: FormData | File[] | FileList) => {
 
     return res.data;
   },
+
   updateRelatedProducts: async (
-  id: string,
-  payload: {
-    relatedProductIds: string[];
-    similarStyleProductIds?: string[];
+    id: string,
+    payload: {
+      relatedProductIds: string[];
+      similarStyleProductIds?: string[];
+    },
+  ) => {
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(id)}/related-products`,
+      payload,
+    );
+    return res.data;
   },
-) => {
-  const res = await api.patch(`/admin/catalog/${id}/related-products`, payload);
-  return res.data;
-},
 
   // =====================================================
   // ADMIN CATALOG LISTING APIs
   // =====================================================
 
-  list: async () => {
-  const res = await api.get('/admin/catalog');
-  return res.data;
-},
+  list: async (params?: QueryParams) => {
+    const res = await api.get('/admin/catalog', { params });
+    return res.data;
+  },
 
   listWithFallback: async (params?: QueryParams) => {
     try {
@@ -229,22 +312,26 @@ uploadVideos: async (id: string, input: FormData | File[] | FileList) => {
   // =====================================================
 
   detail: async (id: string) => {
-    const res = await api.get(`/admin/catalog/${id}/detail`);
+    const res = await api.get(`/admin/catalog/${encodeURIComponent(id)}/detail`);
     return res.data;
   },
 
   media: async (id: string) => {
-    const res = await api.get(`/admin/catalog/${id}/media`);
+    const res = await api.get(`/admin/catalog/${encodeURIComponent(id)}/media`);
     return res.data;
   },
 
   statusHistory: async (id: string) => {
-    const res = await api.get(`/admin/catalog/${id}/status-history`);
+    const res = await api.get(
+      `/admin/catalog/${encodeURIComponent(id)}/status-history`,
+    );
     return res.data;
   },
 
   relations: async (id: string) => {
-    const res = await api.get(`/admin/catalog/${id}/relations`);
+    const res = await api.get(
+      `/admin/catalog/${encodeURIComponent(id)}/relations`,
+    );
     return res.data;
   },
 
@@ -252,66 +339,79 @@ uploadVideos: async (id: string, input: FormData | File[] | FileList) => {
   // ADMIN PRODUCT SECTION UPDATE APIs
   // =====================================================
 
-updateBasicInfo: async (id: string, payload: any) => {
-  const res = await api.patch(`/admin/catalog/${id}/basic-info`, {
-    title: payload.title,
-    name: payload.name,
-    description: payload.description,
-    shortDescription: payload.shortDescription,
+  updateBasicInfo: async (id: string, payload: any) => {
+    const res = await api.patch(`/admin/catalog/${encodeURIComponent(id)}/basic-info`, {
+      title: payload.title,
+      name: payload.name,
+      description: payload.description,
+      shortDescription: payload.shortDescription,
 
-    category: payload.category,
+      category: payload.category,
 
-    productType: payload.productType,
+      productType: payload.productType,
 
-    vendor: payload.vendor,
-  
-   
+      vendor: payload.vendor,
 
-    color: payload.color,
-    fabric: payload.fabric,
-    occasion: payload.occasion,
-    style: payload.style,
-    print: payload.print,
-    badge: payload.badge,
+      color: payload.color,
+      fabric: payload.fabric,
+      occasion: payload.occasion,
+      style: payload.style,
+      print: payload.print,
+      badge: payload.badge,
 
-    metafields: payload.metafields,
-    similarProductIds: payload.similarProductIds,
-    relatedProductIds: payload.relatedProductIds,
-  });
+      metafields: payload.metafields,
+      similarProductIds: payload.similarProductIds,
+      relatedProductIds: payload.relatedProductIds,
+    });
 
-  return res.data;
-},
+    return res.data;
+  },
 
   updateCommerceSettings: async (id: string, payload: any) => {
     const res = await api.patch(
-      `/admin/catalog/${id}/commerce-settings`,
+      `/admin/catalog/${encodeURIComponent(id)}/commerce-settings`,
       payload,
     );
     return res.data;
   },
 
   updatePricing: async (id: string, payload: any) => {
-    const res = await api.patch(`/admin/catalog/${id}/pricing`, payload);
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(id)}/pricing`,
+      payload,
+    );
     return res.data;
   },
 
   updateAvailability: async (id: string, payload: any) => {
-    const res = await api.patch(`/admin/catalog/${id}/availability`, payload);
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(id)}/availability`,
+      payload,
+    );
     return res.data;
   },
 
   updateTags: async (id: string, payload: any) => {
-    const res = await api.patch(`/admin/catalog/${id}/tags`, payload);
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(id)}/tags`,
+      payload,
+    );
     return res.data;
   },
 
   updateCollections: async (id: string, payload: any) => {
-    const res = await api.patch(`/admin/catalog/${id}/collections`, payload);
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(id)}/collections`,
+      payload,
+    );
     return res.data;
   },
 
   updateSeo: async (id: string, payload: any) => {
-    const res = await api.patch(`/admin/catalog/${id}/seo`, payload);
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(id)}/seo`,
+      payload,
+    );
     return res.data;
   },
 
@@ -320,72 +420,135 @@ updateBasicInfo: async (id: string, payload: any) => {
   // =====================================================
 
   updateStatus: async (id: string, payload: any) => {
-    const res = await api.patch(`/admin/catalog/${id}/status`, payload);
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(id)}/status`,
+      payload,
+    );
     return res.data;
   },
 
   publish: async (id: string, payload: any = {}) => {
-    const res = await api.patch(`/admin/catalog/${id}/publish`, payload);
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(id)}/publish`,
+      payload,
+    );
     return res.data;
   },
 
   unpublish: async (id: string, payload: any = {}) => {
-    const res = await api.patch(`/admin/catalog/${id}/unpublish`, payload);
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(id)}/unpublish`,
+      payload,
+    );
     return res.data;
   },
 
   duplicate: async (id: string) => {
-    const res = await api.post(`/admin/catalog/${id}/duplicate`);
+    const res = await api.post(
+      `/admin/catalog/${encodeURIComponent(id)}/duplicate`,
+    );
     return res.data;
   },
 
   // =====================================================
   // IMAGE MANAGEMENT APIs
+  // Swagger:
+  // PATCH /admin/catalog/{id}/images/{imageId}
+  // PATCH /admin/catalog/{id}/images/reorder
+  // PATCH /admin/catalog/{id}/images/{imageId}/primary
   // =====================================================
 
- updateImage: async (id: string, imageId: string, payload: any) => {
-  const res = await api.patch(
-    `/admin/catalog/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`,
-    payload,
-  );
+  updateImage: async (
+    idOrImageId: string,
+    imageIdOrPayload: string | any,
+    maybePayload?: any,
+  ) => {
+    if (maybePayload === undefined) {
+      const res = await api.patch(
+        `/admin/catalog/images/${encodeURIComponent(idOrImageId)}`,
+        imageIdOrPayload,
+      );
+      return res.data;
+    }
 
-  return res.data;
-},
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(idOrImageId)}/images/${encodeURIComponent(
+        String(imageIdOrPayload),
+      )}`,
+      maybePayload,
+    );
 
-  reorderImages: async (id: string, imageIds: string[]) => {
-    const res = await api.patch(`/admin/catalog/${id}/images/reorder`, {
-      imageIds,
+    return res.data;
+  },
+
+  reorderImages: async (
+    id: string,
+    images:
+      | string[]
+      | {
+          imageId: string;
+          position: number;
+        }[],
+  ) => {
+    const normalizedImages = images.map((item: any, index: number) => {
+      if (typeof item === 'string') {
+        return {
+          imageId: item,
+          position: index,
+        };
+      }
+
+      return {
+        imageId: item.imageId,
+        position: item.position ?? index,
+      };
     });
+
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(id)}/images/reorder`,
+      {
+        images: normalizedImages,
+      },
+    );
 
     return res.data;
   },
 
   setPrimaryImage: async (id: string, imageId: string) => {
-  const res = await api.patch(
-    `/admin/catalog/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}/primary`,
-    {},
-  );
+    const res = await api.patch(
+      `/admin/catalog/${encodeURIComponent(id)}/images/${encodeURIComponent(
+        imageId,
+      )}/primary`,
+      {},
+    );
 
-  return res.data;
-},
+    return res.data;
+  },
 
   // =====================================================
   // VARIANT APIs
   // =====================================================
 
   createVariant: async (productId: string, payload: any) => {
-    const res = await api.post(`/admin/catalog/${productId}/variants`, payload);
+    const res = await api.post(
+      `/admin/catalog/${encodeURIComponent(productId)}/variants`,
+      payload,
+    );
     return res.data;
   },
 
   getVariants: async (productId: string) => {
-    const res = await api.get(`/admin/catalog/${productId}/variants`);
+    const res = await api.get(
+      `/admin/catalog/${encodeURIComponent(productId)}/variants`,
+    );
     return res.data;
   },
 
   updateVariant: async (productId: string, variantId: string, payload: any) => {
     const res = await api.patch(
-      `/admin/catalog/${productId}/variants/${variantId}`,
+      `/admin/catalog/${encodeURIComponent(productId)}/variants/${encodeURIComponent(
+        variantId,
+      )}`,
       payload,
     );
 
@@ -394,7 +557,9 @@ updateBasicInfo: async (id: string, payload: any) => {
 
   deleteVariant: async (productId: string, variantId: string) => {
     const res = await api.delete(
-      `/admin/catalog/${productId}/variants/${variantId}`,
+      `/admin/catalog/${encodeURIComponent(productId)}/variants/${encodeURIComponent(
+        variantId,
+      )}`,
     );
 
     return res.data;
@@ -406,7 +571,9 @@ updateBasicInfo: async (id: string, payload: any) => {
     payload: VariantStockPayload,
   ) => {
     const res = await api.patch(
-      `/admin/catalog/${productId}/variants/${variantId}/stock`,
+      `/admin/catalog/${encodeURIComponent(productId)}/variants/${encodeURIComponent(
+        variantId,
+      )}/stock`,
       payload,
     );
 
@@ -498,6 +665,4 @@ updateBasicInfo: async (id: string, payload: any) => {
     const res = await api.post('/admin/catalog/categories', payload);
     return res.data;
   },
-
-
 };

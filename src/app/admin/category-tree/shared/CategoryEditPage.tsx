@@ -1022,27 +1022,32 @@ async function toggleCategoryDisplayed() {
       });
 
       if (cleanSlug && imageFile) {
-        const imageRes = await adminCategoriesService.uploadCategoryImage(cleanSlug, {
-          file: imageFile,
-          name: imageName.trim(),
-          altText: imageAltText.trim(),
-        });
+  if (!(imageFile instanceof File)) {
+    throw new Error('Please select a valid image file before uploading.');
+  }
 
-        const uploadedImageUrl =
-          imageRes?.data?.imageUrl ||
-          imageRes?.data?.url ||
-          imageRes?.data?.secureUrl ||
-          imageRes?.imageUrl ||
-          imageRes?.url ||
-          imageRes?.secureUrl ||
-          '';
+  const imageRes = await adminCategoriesService.uploadCategoryImage(cleanSlug, {
+    file: imageFile,
+    name: imageName.trim() || imageFile.name,
+    altText: imageAltText.trim(),
+  });
 
-        if (uploadedImageUrl) {
-          setImagePreview(uploadedImageUrl);
-        }
+  const imageData = imageRes?.data?.image || imageRes?.data || imageRes;
 
-        setImageFile(null);
-      }
+  const uploadedImageUrl =
+    imageData?.imageUrl ||
+    imageData?.url ||
+    imageData?.secureUrl ||
+    imageData?.secure_url ||
+    imageData?.cloudinaryUrl ||
+    '';
+
+  if (uploadedImageUrl) {
+    setImagePreview(uploadedImageUrl);
+  }
+
+  setImageFile(null);
+}
 
       if (mode === 'edit') {
         await saveCategoryProductsOrder();
@@ -1665,11 +1670,13 @@ onClick={toggleCategoryDisplayed}                    className={`rounded-full px
                   imageName={imageName}
                   imageAltText={imageAltText}
                   onImageChange={({ file, url, name, altText }) => {
-                    setImageFile(file ?? null);
-                    setImagePreview(url);
-                    setImageName(name);
-                    setImageAltText(altText);
-                  }}
+  const nextFile = file instanceof File ? file : null;
+
+  setImageFile(nextFile);
+  setImagePreview(url || '');
+  setImageName(name || nextFile?.name || '');
+  setImageAltText(altText || '');
+}}
                 />
               </div>
             </Card>

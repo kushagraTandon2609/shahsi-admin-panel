@@ -1268,6 +1268,11 @@ useEffect(() => {
 
 
 async function saveMediaMetadata(item: any, index: number) {
+  if (!currentProductId) {
+    setError('Product ID missing, so metadata cannot be saved.');
+    return;
+  }
+
   const mediaId = getMediaId(item);
   const key = getMediaEditKey(item, index);
   const edit = mediaEdits[key];
@@ -1278,19 +1283,15 @@ async function saveMediaMetadata(item: any, index: number) {
   }
 
   try {
-    await adminCatalogService.updateImage(mediaId, {
-      alt: edit?.altText || '',
-      caption: edit?.name || '',
-      viewType: item?.viewType || 'front',
-      position: index,
-      colorName: item?.colorName || '',
+    await adminCatalogService.updateImage(currentProductId, mediaId, {
+      altText: edit?.altText || '',
+      imageName: edit?.name || '',
+      sortOrder: index,
       isPrimary: Boolean(item?.isPrimary),
     });
 
-    if (currentProductId) {
-      await reloadProduct(currentProductId);
-      await onReload?.();
-    }
+    await reloadProduct(currentProductId);
+    await onReload?.();
   } catch (err: any) {
     setError(getApiErrorMessage(err));
   }
@@ -2235,15 +2236,22 @@ async function uploadSelectedMedia() {
     return;
   }
 
+  const validMedia = selectedMedia.filter((item) => item.file instanceof File);
+
+  if (validMedia.length === 0) {
+    setError('Selected media files are invalid. Please select files again.');
+    return;
+  }
+
   setSaving(true);
   setError('');
 
   try {
-    const imageFiles = selectedMedia
+    const imageFiles = validMedia
       .filter((item) => item.file.type.startsWith('image/'))
       .map((item) => item.file);
 
-    const videoFiles = selectedMedia
+    const videoFiles = validMedia
       .filter((item) => item.file.type.startsWith('video/'))
       .map((item) => item.file);
 
@@ -2256,6 +2264,8 @@ async function uploadSelectedMedia() {
     }
 
     clearSelectedMedia();
+    setShowMediaPicker(false);
+
     await reloadProduct(currentProductId);
     await onReload?.();
   } catch (err: any) {

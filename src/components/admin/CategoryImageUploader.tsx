@@ -36,6 +36,11 @@ export function CategoryImageUploader({
   }, []);
 
   function handleFile(file: File) {
+    if (!(file instanceof File)) {
+      alert('Please select a valid image file.');
+      return;
+    }
+
     if (!file.type.startsWith('image/')) {
       alert('Only image files are allowed.');
       return;
@@ -46,13 +51,15 @@ export function CategoryImageUploader({
     }
 
     const previewUrl = URL.createObjectURL(file);
+    const defaultName = file.name.replace(/\.[^/.]+$/, '');
+
     lastObjectUrlRef.current = previewUrl;
 
     onImageChange({
       file,
       url: previewUrl,
-      name: imageName || file.name.replace(/\.[^/.]+$/, ''),
-      altText: imageAltText,
+      name: imageName || defaultName,
+      altText: imageAltText || defaultName,
     });
 
     if (inputRef.current) {
@@ -90,7 +97,7 @@ export function CategoryImageUploader({
 
   function updateImageName(name: string) {
     onImageChange({
-      file: imageFile ?? null,
+      file: imageFile instanceof File ? imageFile : null,
       url: imageUrl || '',
       name,
       altText: imageAltText || '',
@@ -99,7 +106,7 @@ export function CategoryImageUploader({
 
   function updateImageAltText(altText: string) {
     onImageChange({
-      file: imageFile ?? null,
+      file: imageFile instanceof File ? imageFile : null,
       url: imageUrl || '',
       name: imageName || '',
       altText,
@@ -127,6 +134,7 @@ export function CategoryImageUploader({
             <img
               src={imageUrl}
               alt={imageAltText || imageName || 'Category image'}
+              draggable={false}
               className="h-48 w-full object-cover"
             />
 
@@ -164,7 +172,9 @@ export function CategoryImageUploader({
           className="hidden"
           onChange={(e) => {
             const file = e.target.files?.[0];
+
             if (!file) return;
+
             handleFile(file);
           }}
         />
