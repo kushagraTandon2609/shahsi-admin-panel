@@ -3457,9 +3457,9 @@ async function unpublishProduct() {
 </Card>
 
 {showMediaPicker && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-    <div className="flex max-h-[85vh] w-full max-w-5xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
-      <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4">
+  <div className="mt-4 rounded-2xl border border-gray-200 bg-white shadow-xl">
+    <div className="max-h-[520px] w-full overflow-hidden rounded-2xl bg-white">
+      <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
         <h2 className="text-base font-bold text-gray-950">Select file</h2>
 
         <button
@@ -3520,7 +3520,7 @@ async function unpublishProduct() {
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-5 py-5">
+      <div className="max-h-[360px] overflow-y-auto px-5 py-5">
         {selectedMedia.length === 0 ? (
           <p className="py-10 text-center text-sm text-gray-500">
             No new media selected yet.
@@ -3529,52 +3529,53 @@ async function unpublishProduct() {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
             {selectedMedia.map((item, index) => (
               <div
-  key={`${item.file.name}-${item.file.lastModified}-${index}`}
-  onDragOver={(e) => {
-    e.preventDefault();
-    e.currentTarget.classList.add('border-black', 'bg-gray-50');
-  }}
-  onDragLeave={(e) => {
-    e.currentTarget.classList.remove('border-black', 'bg-gray-50');
-  }}
-  onDrop={(e) => {
-    e.preventDefault();
+                key={`${item.file.name}-${item.file.lastModified}-${index}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.add('border-black', 'bg-gray-50');
+                }}
+                onDragLeave={(e) => {
+                  e.currentTarget.classList.remove('border-black', 'bg-gray-50');
+                }}
+                onDrop={(e) => {
+                  e.preventDefault();
 
-    const fromIndex = Number(e.dataTransfer.getData('text/plain'));
+                  const fromIndex = Number(e.dataTransfer.getData('text/plain'));
 
-    e.currentTarget.classList.remove('border-black', 'bg-gray-50');
+                  e.currentTarget.classList.remove('border-black', 'bg-gray-50');
 
-    if (Number.isNaN(fromIndex)) return;
+                  if (Number.isNaN(fromIndex)) return;
 
-    handleSelectedMediaDrop(fromIndex, index);
-  }}
-  className={`rounded-2xl border bg-white p-2 shadow-sm transition ${
-    selectedMediaDragIndex === index
-      ? 'border-black opacity-60'
-      : 'border-gray-200'
-  }`}
->
+                  handleSelectedMediaDrop(fromIndex, index);
+                }}
+                className={`rounded-2xl border bg-white p-2 shadow-sm transition ${
+                  selectedMediaDragIndex === index
+                    ? 'border-black opacity-60'
+                    : 'border-gray-200'
+                }`}
+              >
                 <div className="relative overflow-hidden rounded-xl bg-gray-50">
                   <div className="mb-2 flex items-center justify-between">
-  <button
-    type="button"
-    draggable
-    onDragStart={(e) => {
-      setSelectedMediaDragIndex(index);
-      e.dataTransfer.effectAllowed = 'move';
-      e.dataTransfer.setData('text/plain', String(index));
-    }}
-    onDragEnd={() => setSelectedMediaDragIndex(null)}
-    className="cursor-grab rounded-lg px-2 py-1 text-sm text-gray-400 hover:bg-gray-100 active:cursor-grabbing"
-    title="Drag to reorder"
-  >
-    ⋮⋮
-  </button>
+                    <button
+                      type="button"
+                      draggable
+                      onDragStart={(e) => {
+                        setSelectedMediaDragIndex(index);
+                        e.dataTransfer.effectAllowed = 'move';
+                        e.dataTransfer.setData('text/plain', String(index));
+                      }}
+                      onDragEnd={() => setSelectedMediaDragIndex(null)}
+                      className="cursor-grab rounded-lg px-2 py-1 text-sm text-gray-400 hover:bg-gray-100 active:cursor-grabbing"
+                      title="Drag to reorder"
+                    >
+                      ⋮⋮
+                    </button>
 
-  <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
-    #{index + 1}
-  </span>
-</div>
+                    <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
+                      #{index + 1}
+                    </span>
+                  </div>
+
                   {item.file.type.startsWith('video/') ? (
                     <video
                       src={item.previewUrl}
@@ -3591,16 +3592,16 @@ async function unpublishProduct() {
                   )}
 
                   <button
-  type="button"
-  draggable={false}
-  onClick={(e) => {
-    e.stopPropagation();
-    removeSelectedMedia(index);
-  }}
-  className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-xs text-white"
->
-  ×
-</button>
+                    type="button"
+                    draggable={false}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      removeSelectedMedia(index);
+                    }}
+                    className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-0.5 text-xs text-white"
+                  >
+                    ×
+                  </button>
                 </div>
 
                 <p className="mt-2 truncate text-xs font-medium text-gray-700">
@@ -3612,26 +3613,25 @@ async function unpublishProduct() {
                 </p>
 
                 <input
-  value={item.name}
-  onChange={(e) => updateSelectedMedia(index, 'name', e.target.value)}
-  className="mt-2 h-8 w-full rounded-lg border border-gray-200 px-2 text-xs outline-none"
-  placeholder="Name"
-/>
+                  value={item.name}
+                  onChange={(e) => updateSelectedMedia(index, 'name', e.target.value)}
+                  className="mt-2 h-8 w-full rounded-lg border border-gray-200 px-2 text-xs outline-none"
+                  placeholder="Name"
+                />
 
-<textarea
-  value={item.altText}
-  onChange={(e) => updateSelectedMedia(index, 'altText', e.target.value)}
-  className="mt-2 min-h-14 w-full rounded-lg border border-gray-200 px-2 py-1 text-xs outline-none"
-  placeholder="Alt text"
-/>
-
+                <textarea
+                  value={item.altText}
+                  onChange={(e) => updateSelectedMedia(index, 'altText', e.target.value)}
+                  className="mt-2 min-h-14 w-full rounded-lg border border-gray-200 px-2 py-1 text-xs outline-none"
+                  placeholder="Alt text"
+                />
               </div>
             ))}
           </div>
         )}
       </div>
 
-      <div className="flex items-center justify-end gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4">
+      <div className="sticky bottom-0 z-10 flex items-center justify-end gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4">
         <Button
           variant="secondary"
           onClick={() => {
@@ -3654,7 +3654,6 @@ async function unpublishProduct() {
     </div>
   </div>
 )}
-
 <Card>
   <ProductCategoryTreeSelector
   categories={categoryTree}
