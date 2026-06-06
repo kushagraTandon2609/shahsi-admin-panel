@@ -173,40 +173,54 @@ export function ProductCategoryTreeSelector({
     );
   }
 
-  function toggleSelected(id: string) {
+    function toggleSelected(id: string) {
     const alreadySelected = selectedCategoryIds.includes(id);
 
     if (alreadySelected) {
-      const nextIds = selectedCategoryIds.filter((item) => item !== id);
+      const idsToRemove = getDescendantIdsFromTree(id);
+      const nextIds = selectedCategoryIds.filter(
+        (item) => !idsToRemove.includes(item),
+      );
+
       onSelectedChange(nextIds);
 
-      if (primaryCategoryId === id) {
+      if (primaryCategoryId && !nextIds.includes(primaryCategoryId)) {
         onPrimaryChange(nextIds[0] || '');
       }
 
       return;
     }
 
-    const nextIds = [...selectedCategoryIds, id];
+    const pathIds = getCategoryPathIdsFromFlat(id);
+    const nextIds = Array.from(new Set([...selectedCategoryIds, ...pathIds]));
+
     onSelectedChange(nextIds);
 
-    if (!primaryCategoryId) {
+    if (!primaryCategoryId || !nextIds.includes(primaryCategoryId)) {
       onPrimaryChange(id);
     }
   }
 
-  function removeSelected(id: string) {
-    const nextIds = selectedCategoryIds.filter((item) => item !== id);
+    function removeSelected(id: string) {
+    const idsToRemove = getDescendantIdsFromTree(id);
+    const nextIds = selectedCategoryIds.filter(
+      (item) => !idsToRemove.includes(item),
+    );
+
     onSelectedChange(nextIds);
 
-    if (primaryCategoryId === id) {
+    if (primaryCategoryId && !nextIds.includes(primaryCategoryId)) {
       onPrimaryChange(nextIds[0] || '');
     }
   }
 
-  function makePrimary(id: string) {
+    function makePrimary(id: string) {
+    const nextIds = selectedCategoryIds.includes(id)
+      ? selectedCategoryIds
+      : Array.from(new Set([...selectedCategoryIds, ...getCategoryPathIdsFromFlat(id)]));
+
     if (!selectedCategoryIds.includes(id)) {
-      onSelectedChange([...selectedCategoryIds, id]);
+      onSelectedChange(nextIds);
     }
 
     onPrimaryChange(id);
@@ -235,6 +249,79 @@ export function ProductCategoryTreeSelector({
     } finally {
       setAdding(false);
     }
+  }
+  function getCategoryPathIdsFromFlat(categoryId: string) {
+    const target = flatCategories.find((category) => category.__id === categoryId);
+
+    if (!target) return [];
+
+    const pathIds: string[] = [];
+
+    function walk(items: any[], path: string[] = []): boolean {
+      for (let index = 0; index < items.length; index += 1) {
+        const item = items[index];
+        const id = getCategoryId(item, index);
+        const nextPath = [...path, id];
+
+        if (id === categoryId) {
+          pathIds.push(...nextPath);
+          return true;
+        }
+
+        const children = getCategoryChildren(item);
+
+        if (children.length > 0 && walk(children, nextPath)) {
+          return true;
+        }
+      }
+
+      return false;
+    }
+
+    walk(categories);
+
+    return Array.from(new Set(pathIds));
+  }
+
+  function getDescendantIdsFromTree(categoryId: string) {
+    const output: string[] = [];
+
+    function walk(items: any[]) {
+      items.forEach((item, index) => {
+        const id = getCategoryId(item, index);
+
+        if (id === categoryId) {
+          collect(item);
+          return;
+        }
+
+        walk(getCategoryChildren(item));
+      });
+    }
+
+    function collect(item: any) {
+      const id = getCategoryId(item);
+
+      if (id) output.push(id);
+
+      getCategoryChildren(item).forEach(collect);
+    }
+
+    walk(categories);
+
+    return Array.from(new Set(output));
+  }
+
+  function getLeafSelectedIds() {
+    return selectedCategoryIds.filter((categoryId) => {
+      return !selectedCategoryIds.some((otherId) => {
+        if (otherId === categoryId) return false;
+
+        const otherPath = getCategoryPathIdsFromFlat(otherId);
+
+        return otherPath.includes(categoryId);
+      });
+    });
   }
 
   function renderTree(items: any[], level = 0) {
@@ -318,8 +405,8 @@ export function ProductCategoryTreeSelector({
                     )}
                   </div>
 
-                  <p className="mt-0.5 text-xs text-gray-400">
-                    {productCount} product{Number(productCount) === 1 ? '' : 's'}
+                                    <p className="mt-0.5 text-xs text-gray-400">
+                    {productCount} direct product{Number(productCount) === 1 ? '' : 's'}
                   </p>
                 </div>
 
@@ -350,8 +437,8 @@ export function ProductCategoryTreeSelector({
           <h2 className="text-base font-semibold text-gray-950">Categories</h2>
 
           <p className="mt-1 text-sm text-gray-500">
-            Select all collections and categories where this product should appear.
-          </p>
+  Select the target category. Parent categories will be checked automatically for context.
+</p>
 
           {primaryCategory && (
             <p className="mt-2 text-xs text-gray-500">
@@ -431,49 +518,51 @@ export function ProductCategoryTreeSelector({
         </div>
       )}
 
-      {selectedCategories.length > 0 && (
-        <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-            Selected categories
-          </p>
+      {selectedCategories.filter((category) => getLeafSelectedIds().includes(category.__id)).length > 0 && (
+  <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+      Selected target categories
+    </p>
 
-          <div className="flex flex-wrap gap-2">
-            {selectedCategories.map((category) => (
-              <span
-                key={category.__id}
-                className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700"
-              >
-                {primaryCategoryId === category.__id && <Star size={12} />}
-                {getCategoryName(category)}
+    <div className="flex flex-wrap gap-2">
+      {selectedCategories
+        .filter((category) => getLeafSelectedIds().includes(category.__id))
+        .map((category) => (
+          <span
+            key={category.__id}
+            className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700"
+          >
+            {primaryCategoryId === category.__id && <Star size={12} />}
+            {getCategoryName(category)}
 
-                {primaryCategoryId === category.__id && (
-                  <span className="rounded-full bg-black px-2 py-0.5 text-[10px] text-white">
-                    Primary
-                  </span>
-                )}
-
-                {primaryCategoryId !== category.__id && (
-                  <button
-                    type="button"
-                    onClick={() => makePrimary(category.__id)}
-                    className="font-semibold text-gray-500 hover:text-black"
-                  >
-                    Set primary
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => removeSelected(category.__id)}
-                  className="text-gray-400 hover:text-red-600"
-                >
-                  <X size={13} />
-                </button>
+            {primaryCategoryId === category.__id && (
+              <span className="rounded-full bg-black px-2 py-0.5 text-[10px] text-white">
+                Primary
               </span>
-            ))}
-          </div>
-        </div>
-      )}
+            )}
+
+            {primaryCategoryId !== category.__id && (
+              <button
+                type="button"
+                onClick={() => makePrimary(category.__id)}
+                className="font-semibold text-gray-500 hover:text-black"
+              >
+                Set primary
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => removeSelected(category.__id)}
+              className="text-gray-400 hover:text-red-600"
+            >
+              <X size={13} />
+            </button>
+          </span>
+        ))}
+    </div>
+  </div>
+)}
 
       <div className="max-h-[420px] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3">
         {categories.length === 0 ? (

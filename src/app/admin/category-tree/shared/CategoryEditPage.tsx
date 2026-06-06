@@ -151,20 +151,37 @@ function getProductImage(product: any) {
           ? p.assets
           : [];
 
+  const imageItems = images.filter((item: any) => {
+    const resourceType = String(
+      item?.resourceType ||
+        item?.resource_type ||
+        item?.type ||
+        item?.mediaType ||
+        '',
+    ).toLowerCase();
+
+    const url = String(
+      item?.secureUrl ||
+        item?.secure_url ||
+        item?.url ||
+        item?.imageUrl ||
+        item?.src ||
+        item?.mediaUrl ||
+        '',
+    );
+
+    const looksVideo =
+      resourceType === 'video' ||
+      /\.(mp4|webm|mov|avi|m4v)(\?.*)?$/i.test(url);
+
+    return !looksVideo;
+  });
+
   const primaryImage =
-    images.find((item: any) => item?.isPrimary || item?.is_primary) ||
-    images[0];
+    imageItems.find((item: any) => item?.isPrimary || item?.is_primary) ||
+    imageItems[0];
 
   const image =
-    p?.imageUrl ||
-    p?.image ||
-    p?.thumbnail ||
-    p?.thumbnailUrl ||
-    p?.primaryImage ||
-    p?.primaryImageUrl ||
-    p?.mediaUrl ||
-    p?.fileUrl ||
-    p?.cloudinaryUrl ||
     primaryImage?.secureUrl ||
     primaryImage?.secure_url ||
     primaryImage?.url ||
@@ -173,6 +190,15 @@ function getProductImage(product: any) {
     primaryImage?.mediaUrl ||
     primaryImage?.fileUrl ||
     primaryImage?.cloudinaryUrl ||
+    p?.primaryImageUrl ||
+    p?.imageUrl ||
+    p?.thumbnailUrl ||
+    p?.thumbnail ||
+    p?.image ||
+    p?.primaryImage ||
+    p?.mediaUrl ||
+    p?.fileUrl ||
+    p?.cloudinaryUrl ||
     '';
 
   if (typeof image === 'string') return image;
@@ -188,6 +214,217 @@ function getProductImage(product: any) {
     image?.cloudinaryUrl ||
     ''
   );
+}
+
+function normalizeSlugValue(value: any) {
+  return String(value || '').toLowerCase().trim();
+}
+
+function getProductCategorySlugs(product: any) {
+  const p = product?.product || product?.catalogProduct || product;
+
+  const categories = Array.isArray(p?.categories)
+    ? p.categories
+    : Array.isArray(p?.categoryIds)
+      ? p.categoryIds
+      : Array.isArray(p?.productCategories)
+        ? p.productCategories
+        : [];
+
+  return categories
+    .map((item: any) =>
+      normalizeSlugValue(
+        typeof item === 'string'
+          ? item
+          : item?.slug ||
+              item?.handle ||
+              item?.name ||
+              item?.category ||
+              item?.primaryCategory ||
+              item?.id ||
+              '',
+      ),
+    )
+    .filter(Boolean);
+}
+
+function getProductDirectCategorySlug(product: any) {
+  const p = product?.product || product?.catalogProduct || product;
+
+  return normalizeSlugValue(
+    p?.primaryCategory ||
+      p?.category ||
+      p?.categorySlug ||
+      p?.categoryName ||
+      p?.primaryCategorySlug ||
+      '',
+  );
+}
+
+function isProductDirectlyAssignedToCategory(product: any, categorySlug: string) {
+  const normalizedCategorySlug = normalizeSlugValue(categorySlug);
+  if (!normalizedCategorySlug) return true;
+
+  const directSlug = getProductDirectCategorySlug(product);
+
+  if (directSlug) {
+    return directSlug === normalizedCategorySlug;
+  }
+
+  return getProductCategorySlugs(product).includes(normalizedCategorySlug);
+}
+
+function getProductTitleForSort(product: any) {
+  const p = product?.product || product?.catalogProduct || product;
+
+  return String(p?.title || p?.name || '').toLowerCase().trim();
+}
+
+function getProductPriceForSort(product: any) {
+  const p = product?.product || product?.catalogProduct || product;
+
+  const price = Number(
+    p?.basePrice ??
+      p?.price ??
+      p?.listingPrice ??
+      p?.rentalPrice ??
+      p?.resalePrice ??
+      0,
+  );
+
+  return Number.isFinite(price) ? price : 0;
+}
+
+function getProductDateForSort(product: any) {
+  const p = product?.product || product?.catalogProduct || product;
+
+  const dateValue = p?.createdAt || p?.publishedAt || p?.updatedAt || '';
+
+  const time = new Date(dateValue).getTime();
+
+  return Number.isFinite(time) ? time : 0;
+}
+
+function getBestSellingScore(product: any) {
+  const p = product?.product || product?.catalogProduct || product;
+
+  const score = Number(
+    p?.soldCount ??
+      p?.soldInLastHours ??
+      p?.orderCount ??
+      p?.purchaseCount ??
+      p?.likeCount ??
+      p?.reviewCount ??
+      0,
+  );
+
+  return Number.isFinite(score) ? score : 0;
+}
+
+function sortCategoryProducts(products: any[], sortBy: string, sortDirection?: string) {
+  const normalizedSort = String(sortBy || 'manual').toLowerCase();
+  const normalizedDirection = String(sortDirection || '').toLowerCase();
+
+  const sorted = [...products];
+
+  if (normalizedSort.includes('manual')) {
+    return sorted.sort((a: any, b: any) => {
+      const aOrder = Number(
+        a?.manualOrder ??
+          a?.sortOrder ??
+          a?.position ??
+          a?.product?.sortOrder ??
+          a?.product?.position ??
+          0,
+      );
+
+      const bOrder = Number(
+        b?.manualOrder ??
+          b?.sortOrder ??
+          b?.position ??
+          b?.product?.sortOrder ??
+          b?.product?.position ??
+          0,
+      );
+
+      return aOrder - bOrder;
+    });
+  }
+
+  if (
+    normalizedSort.includes('title') ||
+    normalizedSort.includes('a-z') ||
+    normalizedSort.includes('z-a')
+  ) {
+    return sorted.sort((a: any, b: any) => {
+      const result = getProductTitleForSort(a).localeCompare(
+        getProductTitleForSort(b),
+      );
+
+      if (
+        normalizedSort.includes('z-a') ||
+        normalizedSort.includes('desc') ||
+        normalizedDirection === 'desc'
+      ) {
+        return -result;
+      }
+
+      return result;
+    });
+  }
+
+  if (
+    normalizedSort.includes('price') ||
+    normalizedSort.includes('highest') ||
+    normalizedSort.includes('lowest')
+  ) {
+    return sorted.sort((a: any, b: any) => {
+      const result = getProductPriceForSort(a) - getProductPriceForSort(b);
+
+      if (
+        normalizedSort.includes('highest') ||
+        normalizedSort.includes('desc') ||
+        normalizedDirection === 'desc'
+      ) {
+        return -result;
+      }
+
+      return result;
+    });
+  }
+
+  if (
+    normalizedSort.includes('newest') ||
+    normalizedSort.includes('oldest') ||
+    normalizedSort.includes('created') ||
+    normalizedSort.includes('date')
+  ) {
+    return sorted.sort((a: any, b: any) => {
+      const result = getProductDateForSort(a) - getProductDateForSort(b);
+
+      if (
+        normalizedSort.includes('newest') ||
+        normalizedSort.includes('desc') ||
+        normalizedDirection === 'desc'
+      ) {
+        return -result;
+      }
+
+      return result;
+    });
+  }
+
+  if (
+    normalizedSort.includes('best') ||
+    normalizedSort.includes('selling') ||
+    normalizedSort.includes('relevant')
+  ) {
+    return sorted.sort(
+      (a: any, b: any) => getBestSellingScore(b) - getBestSellingScore(a),
+    );
+  }
+
+  return sorted;
 }
 
 function getProductStatus(product: any) {
@@ -503,7 +740,7 @@ const [browserSort, setBrowserSort] = useState('createdAt|desc');
     }));
   }
 
-  async function loadCategoryProducts(category: any) {
+  async function loadCategoryProducts(category: any, nextProductsSort = productsSort) {
     const categorySlug = getCategorySlug(category);
 
     if (!categorySlug) {
@@ -514,23 +751,51 @@ const [browserSort, setBrowserSort] = useState('createdAt|desc');
     setProductsLoading(true);
 
     try {
-      const [sortBy, sortDirection] = productsSort.split('|');
+      const [sortBy, sortDirection] = nextProductsSort.split('|');
 
 const productsRes = await adminCategoriesService.getCategoryProducts(
   categorySlug,
   {
     page: 1,
-    limit: PRODUCTS_PER_PAGE,
+    limit: 500,
     sortBy: sortBy || 'manual',
     sortDirection: (sortDirection as 'asc' | 'desc') || 'asc',
   },
 );
 
       const productsList = unwrapCategoryProducts(productsRes);
-      const meta = unwrapCategoryProductMeta(productsRes);
+const meta = unwrapCategoryProductMeta(productsRes);
 
-      setSelectedProducts(productsList);
-      setProductsMeta(meta);
+const directProducts = productsList.filter((product: any) =>
+  isProductDirectlyAssignedToCategory(product, categorySlug),
+);
+
+const uniqueDirectProducts = directProducts.filter(
+  (product: any, index: number, array: any[]) => {
+    const productId = getProductId(product);
+
+    if (!productId) return true;
+
+    return array.findIndex((item: any) => getProductId(item) === productId) === index;
+  },
+);
+
+const sortedDirectProducts = sortCategoryProducts(
+  uniqueDirectProducts,
+  sortBy || 'manual',
+  sortDirection || 'asc',
+);
+
+setSelectedProducts(sortedDirectProducts);
+setProductsMeta({
+  ...meta,
+  count: sortedDirectProducts.length,
+  total: sortedDirectProducts.length,
+  totalPages: Math.max(
+    1,
+    Math.ceil(sortedDirectProducts.length / PRODUCTS_PER_PAGE),
+  ),
+});
       setCheckedProductIds([]);
       setProductsPage(1);
     } catch (err: any) {
@@ -661,12 +926,16 @@ const productsRes = await adminCategoriesService.getCategoryProducts(
     }
   }
 
-  async function loadProductBrowser(page = 1, query = productBrowserSearch) {
+  async function loadProductBrowser(
+  page = 1,
+  query = productBrowserSearch,
+  nextBrowserSort = browserSort,
+) {
     setProductBrowserLoading(true);
     setProductBrowserError('');
 
     try {
-      const [sortBy, sortDirection] = browserSort.split('|');
+      const [sortBy, sortDirection] = nextBrowserSort.split('|');
 
 const res = await adminCategoriesService.searchCatalogProducts({
   page,
@@ -1193,33 +1462,12 @@ async function toggleCategoryDisplayed() {
 <select
   value={productsSort}
   onChange={async (e) => {
-    setProductsSort(e.target.value);
+    const nextSort = e.target.value;
 
-    const categorySlug = getCategorySlug(currentCategory);
-    if (!categorySlug) return;
+    setProductsSort(nextSort);
 
-    const [sortBy, sortDirection] = e.target.value.split('|');
-
-    setProductsLoading(true);
-
-    try {
-      const productsRes = await adminCategoriesService.getCategoryProducts(
-        categorySlug,
-        {
-          page: 1,
-          limit: PRODUCTS_PER_PAGE,
-          sortBy,
-          sortDirection: sortDirection as 'asc' | 'desc',
-        },
-      );
-
-      setSelectedProducts(unwrapCategoryProducts(productsRes));
-      setProductsMeta(unwrapCategoryProductMeta(productsRes));
-      setProductsPage(1);
-    } catch (err: any) {
-      setError(getApiErrorMessage(err));
-    } finally {
-      setProductsLoading(false);
+    if (currentCategory) {
+      await loadCategoryProducts(currentCategory, nextSort);
     }
   }}
   className="h-11 rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-black"
@@ -1313,7 +1561,7 @@ async function toggleCategoryDisplayed() {
 
                         return (
                           <div
-                            key={productId || index}
+                           key={`${productId || 'product'}-${index}`}
                             draggable
                             onDragStart={() => handleProductDragStart(productId)}
                             onDragOver={handleProductDragOver}
@@ -1783,38 +2031,13 @@ onClick={toggleCategoryDisplayed}                    className={`rounded-full px
 <select
   value={browserSort}
   onChange={(e) => {
-    setBrowserSort(e.target.value);
+    const nextSort = e.target.value;
 
-    const [sortBy, sortDirection] = e.target.value.split('|');
-
-    setProductBrowserLoading(true);
-    setProductBrowserError('');
-
-    adminCategoriesService
-      .searchCatalogProducts({
-        page: 1,
-        limit: BROWSER_LIMIT,
-        q: productBrowserSearch,
-        searchBy: 'all',
-        sortBy,
-        sortDirection: sortDirection as 'asc' | 'desc',
-      })
-      .then((res) => {
-        setProductBrowserProducts(unwrapProductSearchProducts(res));
-        setProductBrowserMeta(unwrapProductSearchMeta(res));
-        setProductBrowserPage(1);
-      })
-      .catch((err: any) => {
-        setProductBrowserProducts([]);
-        setProductBrowserError(getApiErrorMessage(err));
-      })
-      .finally(() => {
-        setProductBrowserLoading(false);
-      });
+    setBrowserSort(nextSort);
+    loadProductBrowser(1, productBrowserSearch, nextSort);
   }}
   className="h-11 rounded-xl border border-gray-300 bg-white px-3 text-sm outline-none focus:border-black"
->
-  {SORT_OPTIONS.map((option) => (
+>  {SORT_OPTIONS.map((option) => (
     <option
       key={`${option.sortBy}|${option.sortDirection}`}
       value={`${option.sortBy}|${option.sortDirection}`}
@@ -1860,8 +2083,7 @@ onClick={toggleCategoryDisplayed}                    className={`rounded-full px
 
                   return (
                     <div
-                      key={productId || index}
-                      className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50"
+key={`${productId || 'browser-product'}-${index}`}                      className="flex items-center gap-3 px-5 py-3 hover:bg-gray-50"
                     >
                       {productImage ? (
                         <img

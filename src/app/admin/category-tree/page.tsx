@@ -97,7 +97,7 @@ function getProductIdFromCategoryProduct(item: any) {
 }
 
 function getCategoryProductCount(category: any): number {
-  const rawCount = Number(
+  const directCount = Number(
     category?.directProductCount ??
       category?.assignedProductsCount ??
       category?.productsCount ??
@@ -105,54 +105,30 @@ function getCategoryProductCount(category: any): number {
       0,
   );
 
-  if (!Number.isFinite(rawCount)) return 0;
+  if (!Number.isFinite(directCount)) return 0;
 
-  const children =
-    category?.children ||
-    category?.subcategories ||
-    category?.items ||
-    category?.nodes ||
-    [];
-
-  const safeChildren = Array.isArray(children) ? children : [];
-
-  const frontendLevel =
-    category?.__level !== undefined
-      ? Number(category.__level)
-      : Math.max(0, Number(category?.level || 1) - 1);
-
-  // Main parent category ka count already correct aa raha hai,
-  // isliye root level par raw count as-it-is rakho.
-  if (frontendLevel === 0) {
-    return rawCount;
-  }
-
-  // Leaf subcategory ka count direct as-it-is rakho.
-  if (safeChildren.length === 0) {
-    return rawCount;
-  }
-
-  // Middle subcategory ka count backend children ke saath add karke bhej raha hai,
-  // isliye child counts minus karo.
-  const childrenTotal = safeChildren.reduce((total: number, child: any) => {
-    return total + getCategoryProductCount(child);
-  }, 0);
-
-  return Math.max(0, rawCount - childrenTotal);
+  return directCount;
 }
 
 
 
 function getCategoryImage(category: any) {
-  return (
+  const image =
     category?.imageUrl ||
-    category?.image ||
+    category?.categoryImageUrl ||
+    category?.secureUrl ||
+    category?.secure_url ||
+    category?.image?.secureUrl ||
+    category?.image?.secure_url ||
+    category?.image?.url ||
     category?.thumbnail ||
     category?.coverImage ||
-    category?.media?.[0]?.url ||
     category?.media?.[0]?.secureUrl ||
-    ''
-  );
+    category?.media?.[0]?.secure_url ||
+    category?.media?.[0]?.url ||
+    '';
+
+  return typeof image === 'string' ? image : '';
 }
 
 function dedupeCategoriesBySlug(categories: any[]) {
@@ -674,7 +650,9 @@ export default function AdminCategoriesPage() {
                       </td>
 
                       <td className="px-5 py-4">
-  {getCategoryProductCount(category)}
+  <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">
+    {getCategoryProductCount(category)}
+  </span>
 </td>
 
                       <td className="px-5 py-4">

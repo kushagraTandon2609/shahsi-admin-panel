@@ -45,7 +45,10 @@ export type SearchCatalogProductsParams = {
   q?: string;
   searchBy?: 'all' | 'title' | 'productId' | 'sku' | 'barcode';
   category?: string;
+  categorySlug?: string;
+  primaryCategory?: string;
   collection?: string;
+  primaryCollection?: string;
   type?: string;
   tags?: string;
   vendor?: string;
@@ -228,46 +231,108 @@ export const adminCategoriesService = {
 
     return res.data;
   },
+  fetchAdminCatalogPage: async (page = 1) => {
+    const res = await api.get('/admin/catalog');
+
+    const root = res.data?.data || res.data;
+
+    return {
+      products: Array.isArray(root?.data) ? root.data : [],
+      page: Number(root?.page || page),
+      totalPages: Number(root?.totalPages || 1),
+      total: Number(root?.total || root?.data?.length || 0),
+      count: Number(root?.count || root?.data?.length || 0),
+      limit: Number(root?.limit || 20),
+      raw: res.data,
+    };
+  },
+
+  fetchAllAdminCatalogProducts: async () => {
+    const firstPage = await adminCategoriesService.fetchAdminCatalogPage(1);
+
+    const allProducts = [...firstPage.products];
+
+    if (firstPage.totalPages > 1) {
+      const restPages = await Promise.all(
+        Array.from({ length: firstPage.totalPages - 1 }, (_, index) =>
+          adminCategoriesService.fetchAdminCatalogPage(index + 2),
+        ),
+      );
+
+      restPages.forEach((page) => {
+        allProducts.push(...page.products);
+      });
+    }
+
+    return {
+      success: true,
+      data: {
+        data: allProducts,
+        products: allProducts,
+        items: allProducts,
+        count: allProducts.length,
+        total: firstPage.total || allProducts.length,
+        page: 1,
+        limit: allProducts.length,
+        totalPages: 1,
+      },
+    };
+  },
 
   searchCatalogProducts: async (params?: SearchCatalogProductsParams) => {
-    const res = await api.get('/admin/catalog/products/search', {
-      params: cleanParams({
-        page: params?.page ?? 1,
-        limit: params?.limit ?? 20,
-        q: params?.q,
-        searchBy: params?.searchBy ?? 'all',
-        category: params?.category,
-        collection: params?.collection,
-        type: params?.type,
-        tags: params?.tags,
-        vendor: params?.vendor,
-        status: params?.status,
-        stockStatus: params?.stockStatus,
-        sortBy: params?.sortBy ?? 'createdAt',
-        sortDirection: params?.sortDirection ?? 'desc',
-      }),
+  const queryParams = cleanParams({
+    page: params?.page ?? 1,
+    limit: params?.limit ?? 50,
+    q: params?.q,
+    searchBy: params?.searchBy ?? 'all',
+
+    // Backend/search APIs can differ, so send all category-compatible keys.
+    category: params?.category || params?.categorySlug || params?.primaryCategory,
+    categorySlug: params?.categorySlug || params?.category || params?.primaryCategory,
+    primaryCategory: params?.primaryCategory || params?.category || params?.categorySlug,
+
+    collection: params?.collection || params?.primaryCollection,
+    primaryCollection: params?.primaryCollection || params?.collection,
+
+    type: params?.type,
+    tags: params?.tags,
+    vendor: params?.vendor,
+    status: params?.status,
+    stockStatus: params?.stockStatus,
+    sortBy: params?.sortBy ?? 'createdAt',
+    sortDirection: params?.sortDirection ?? 'desc',
+  });
+
+  try {
+    const res = await api.get('/admin/catalog', {
+      params: queryParams,
     });
 
     return res.data;
-  },
+  } catch (err) {
+  console.warn('Product search API failed:', err);
 
-  getCategoryProducts: async (
+  return {
+    success: true,
+    data: {
+      data: [],
+      products: [],
+      items: [],
+      count: 0,
+      total: 0,
+      page: queryParams.page || 1,
+      limit: queryParams.limit || 50,
+      totalPages: 1,
+    },
+  };
+}
+},
+
+    getCategoryProducts: async (
     slug: string,
     params?: CategoryProductsParams,
   ) => {
-    const res = await api.get(
-      `/admin/catalog/categories/${encodeURIComponent(slug)}/products`,
-      {
-        params: cleanParams({
-          page: params?.page ?? 1,
-          limit: params?.limit ?? 20,
-          sortBy: params?.sortBy ?? 'manual',
-          sortDirection: params?.sortDirection ?? 'asc',
-        }),
-      },
-    );
-
-    return res.data;
+    return adminCategoriesService.fetchAllAdminCatalogProducts();
   },
 
   updateCategoryProducts: async (
@@ -398,20 +463,13 @@ export const adminCategoriesService = {
   },
 
   getCollectionProducts: async (slug: string) => {
-    const res = await api.get(
-      `/admin/catalog/categories/${encodeURIComponent(slug)}/products`,
-      {
-        params: {
-          page: 1,
-          limit: 20,
-          sortBy: 'manual',
-          sortDirection: 'asc',
-        },
-      },
-    );
-
-    return res.data;
-  },
+  return adminCategoriesService.getCategoryProducts(slug, {
+    page: 1,
+    limit: 500,
+    sortBy: 'createdAt',
+    sortDirection: 'desc',
+  });
+},
 
   updateCollectionProducts: async (
     slug: string,

@@ -1164,32 +1164,34 @@ function findCategoryPathById(
   categoryId: string,
   path: any[] = [],
 ): any[] {
+  const normalizedCategoryId = String(categoryId || '').toLowerCase().trim();
+
+  if (!normalizedCategoryId) return [];
+
   for (let index = 0; index < categories.length; index += 1) {
     const category = categories[index];
 
-    const id = String(
-      category?.id ||
-        category?._id ||
-        category?.categoryId ||
-        category?.slug ||
-        category?.name ||
-        index,
-    );
+    const possibleIds = [
+      category?.id,
+      category?._id,
+      category?.categoryId,
+      category?.slug,
+      category?.handle,
+      category?.name,
+      index,
+    ]
+      .map((item) => String(item || '').toLowerCase().trim())
+      .filter(Boolean);
 
     const nextPath = [...path, category];
 
-    if (id === categoryId) {
+    if (possibleIds.includes(normalizedCategoryId)) {
       return nextPath;
     }
 
-    const children =
-      category?.children ||
-      category?.subcategories ||
-      category?.items ||
-      category?.nodes ||
-      [];
+    const children = getCategoryChildrenFromItem(category);
 
-    if (Array.isArray(children) && children.length > 0) {
+    if (children.length > 0) {
       const foundPath = findCategoryPathById(children, categoryId, nextPath);
 
       if (foundPath.length > 0) {
@@ -1201,6 +1203,260 @@ function findCategoryPathById(
   return [];
 }
 
+function findCategoryByAnyValue(categories: any[], value: string): any | null {
+  const normalizedValue = String(value || '').toLowerCase().trim();
+
+  if (!normalizedValue) return null;
+
+  for (let index = 0; index < categories.length; index += 1) {
+    const category = categories[index];
+
+    const possibleValues = [
+      category?.id,
+      category?._id,
+      category?.categoryId,
+      category?.slug,
+      category?.handle,
+      category?.name,
+      category?.title,
+      category?.label,
+      index,
+    ]
+      .map((item) => String(item || '').toLowerCase().trim())
+      .filter(Boolean);
+
+    if (possibleValues.includes(normalizedValue)) {
+      return category;
+    }
+
+    const found = findCategoryByAnyValue(
+      getCategoryChildrenFromItem(category),
+      value,
+    );
+
+    if (found) return found;
+  }
+
+  return null;
+}
+
+function getCategorySelectionId(category: any, fallbackIndex?: number) {
+  if (!category) return '';
+
+  return String(
+    category?.id ||
+      category?._id ||
+      category?.categoryId ||
+      category?.slug ||
+      category?.handle ||
+      category?.name ||
+      fallbackIndex ||
+      '',
+  );
+}
+
+function getCategoryPathIds(categoryId: string) {
+  const path = findCategoryPathById(categoryTree, categoryId);
+
+  return path
+    .map((category, index) => getCategorySelectionId(category, index))
+    .filter(Boolean);
+}
+
+function getDescendantCategoryIds(category: any) {
+  const output: string[] = [];
+
+  function walk(item: any) {
+    const id = getCategorySelectionId(item);
+
+    if (id) output.push(id);
+
+    getCategoryChildrenFromItem(item).forEach(walk);
+  }
+
+  walk(category);
+
+  return output;
+}
+
+function isAncestorCategory(parentId: string, childId: string) {
+  const childPathIds = getCategoryPathIds(childId);
+
+  return childPathIds.includes(parentId) && parentId !== childId;
+}
+
+function getLeafSelectedCategoryIds(sourceIds: string[] = selectedCategoryIds) {
+  const uniqueIds = Array.from(new Set(sourceIds.filter(Boolean)));
+
+  return uniqueIds.filter((categoryId) => {
+    return !uniqueIds.some((otherId) => isAncestorCategory(categoryId, otherId));
+  });
+}
+
+function getAssignmentCategoryIds() {
+  return getLeafSelectedCategoryIds(selectedCategoryIds);
+}
+
+function getAssignmentCategorySlugs() {
+  const slugs = getAssignmentCategoryIds()
+    .map((categoryId) => {
+      const category =
+        findCategoryById(categoryTree, categoryId) ||
+        findCategoryByAnyValue(categoryTree, categoryId);
+
+      return category ? getCategorySlug(category) : '';
+    })
+    .filter(Boolean);
+
+  return Array.from(new Set(slugs));
+}
+
+function getPrimaryAssignmentCategorySlug() {
+  const assignmentIds = getAssignmentCategoryIds();
+
+  const primaryId =
+    primaryCategoryId && assignmentIds.includes(primaryCategoryId)
+      ? primaryCategoryId
+      : assignmentIds[0] || '';
+
+  const primary =
+    findCategoryById(categoryTree, primaryId) ||
+    findCategoryByAnyValue(categoryTree, primaryId);
+
+  return primary ? getCategorySlug(primary) : '';
+}
+
+function normalizeSavedCategoryIdsFromProduct(productData: any) {
+  const directValues = [
+    productData?.primaryCategory,
+    productData?.category,
+    productData?.primaryCategoryId,
+    productData?.categoryId,
+  ].filter(Boolean);
+
+  const fallbackValues = [
+    ...(Array.isArray(productData?.categories) ? productData.categories : []),
+    ...(Array.isArray(productData?.categoryIds) ? productData.categoryIds : []),
+    ...(Array.isArray(productData?.productCategories)
+      ? productData.productCategories
+      : []),
+  ].filter(Boolean);
+
+  const rawValues = directValues.length > 0 ? directValues : fallbackValues;
+
+  const matchedIds = rawValues
+    .map((item: any) => {
+      const rawValue =
+        typeof item === 'string'
+          ? item
+          : item?.id ||
+            item?._id ||
+            item?.categoryId ||
+            item?.slug ||
+            item?.handle ||
+            item?.name ||
+            item?.title ||
+            item?.label ||
+            '';
+
+      const category =
+        findCategoryByAnyValue(categoryTree, rawValue) ||
+        findCategoryById(categoryTree, rawValue);
+
+      return category ? getCategorySelectionId(category) : '';
+    })
+    .filter(Boolean);
+
+  const leafIds = getLeafSelectedCategoryIds(matchedIds);
+
+  const idsWithParents = leafIds.flatMap((categoryId) =>
+    getCategoryPathIds(categoryId),
+  );
+
+  return Array.from(new Set(idsWithParents));
+}
+
+function getSelectedCategorySlugs() {
+  return getAssignmentCategorySlugs();
+}
+
+function getPrimaryCategorySlug() {
+  return getPrimaryAssignmentCategorySlug();
+}
+
+function handleCategorySelectionChange(nextIds: string[]) {
+  const addedIds = nextIds.filter((id) => !selectedCategoryIds.includes(id));
+  const removedIds = selectedCategoryIds.filter((id) => !nextIds.includes(id));
+
+  let nextSelected = [...selectedCategoryIds];
+
+  addedIds.forEach((categoryId) => {
+    const category =
+      findCategoryById(categoryTree, categoryId) ||
+      findCategoryByAnyValue(categoryTree, categoryId);
+
+    if (!category) return;
+
+    const pathIds = getCategoryPathIds(getCategorySelectionId(category));
+
+    nextSelected = Array.from(new Set([...nextSelected, ...pathIds]));
+  });
+
+  removedIds.forEach((categoryId) => {
+    const category =
+      findCategoryById(categoryTree, categoryId) ||
+      findCategoryByAnyValue(categoryTree, categoryId);
+
+    if (!category) {
+      nextSelected = nextSelected.filter((id) => id !== categoryId);
+      return;
+    }
+
+    const idsToRemove = getDescendantCategoryIds(category);
+
+    nextSelected = nextSelected.filter((id) => !idsToRemove.includes(id));
+  });
+
+  nextSelected = Array.from(new Set(nextSelected));
+
+  setSelectedCategoryIds(nextSelected);
+
+  if (primaryCategoryId && !nextSelected.includes(primaryCategoryId)) {
+    setPrimaryCategoryId(nextSelected[0] || '');
+  }
+}
+
+function handlePrimaryCategoryChange(categoryId: string) {
+  const category =
+    findCategoryById(categoryTree, categoryId) ||
+    findCategoryByAnyValue(categoryTree, categoryId);
+
+  const resolvedId = getCategorySelectionId(category) || categoryId;
+
+  if (!selectedCategoryIds.includes(resolvedId)) {
+    return;
+  }
+
+  setPrimaryCategoryId(resolvedId);
+}
+
+function getSavedPrimaryCategoryIdFromProduct(productData: any, savedIds: string[]) {
+  const rawPrimary =
+    productData?.primaryCategory ||
+    productData?.category ||
+    productData?.primaryCategoryId ||
+    productData?.categoryId ||
+    savedIds[0] ||
+    '';
+
+  const primaryCategory =
+    findCategoryByAnyValue(categoryTree, rawPrimary) ||
+    findCategoryById(categoryTree, rawPrimary);
+
+  const primaryId = getCategorySelectionId(primaryCategory);
+
+  return primaryId && savedIds.includes(primaryId) ? primaryId : savedIds[0] || '';
+}
 async function addCategoryFromProductEditor(payload: {
   name: string;
   parentId?: string;
@@ -1306,6 +1562,18 @@ useEffect(() => {
   loadProductCategoryTree();
   // eslint-disable-next-line react-hooks/exhaustive-deps
 }, []);
+
+useEffect(() => {
+  const sourceProduct = product || initialProduct;
+
+  if (!sourceProduct || categoryTree.length === 0) return;
+
+  const savedIds = normalizeSavedCategoryIdsFromProduct(sourceProduct);
+
+  setSelectedCategoryIds(savedIds);
+  setPrimaryCategoryId(getSavedPrimaryCategoryIdFromProduct(sourceProduct, savedIds));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [categoryTree, product?.id, initialProduct?.id]);
 
 
 async function saveMediaMetadata(item: any, index: number) {
@@ -1528,7 +1796,9 @@ async function reloadProduct(id: string) {
       const normalizeSavedIds = (value: any) => {
         if (Array.isArray(value)) {
           return value
-            .map((item: any) => (typeof item === 'string' ? item : getProductId(item)))
+            .map((item: any) =>
+              typeof item === 'string' ? item : getProductId(item),
+            )
             .filter(Boolean);
         }
 
@@ -1540,34 +1810,49 @@ async function reloadProduct(id: string) {
           .filter(Boolean);
       };
 
-      const buildSelectedProducts = (field: ProductPickerMetafield, ids: string[]) => {
-  const previousProducts = selectedMetafieldProducts[field] || [];
+      const buildSelectedProducts = (
+        field: ProductPickerMetafield,
+        ids: string[],
+      ) => {
+        const previousProducts = selectedMetafieldProducts[field] || [];
 
-  return ids.map((productId) => {
-    const existingProduct = previousProducts.find((item: any) => {
-      const id = typeof item === 'string' ? item : getProductId(item);
-      return id === productId;
-    });
+        return ids.map((productId) => {
+          const existingProduct = previousProducts.find((item: any) => {
+            const itemId =
+              typeof item === 'string' ? item : getProductId(item);
 
-    if (existingProduct && typeof existingProduct !== 'string') {
-      return existingProduct;
-    }
+            return itemId === productId;
+          });
 
-    return {
-      id: productId,
-      productId,
-      title: productId,
-      name: productId,
-      __needsHydration: true,
-    };
-  });
-};
+          if (existingProduct && typeof existingProduct !== 'string') {
+            return existingProduct;
+          }
 
-      const similarStyleProductIds = normalizeSavedIds(savedMetafields.similarStyleProduct);
-      const similarColorProductIds = normalizeSavedIds(savedMetafields.similarColorProducts);
-      const matchWithAccessoryIds = normalizeSavedIds(savedMetafields.matchWithAccessories);
-      const completeTheLookIds = normalizeSavedIds(savedMetafields.completeTheLook);
-      const similarPrintProductIds = normalizeSavedIds(savedMetafields.similarPrintProducts);
+          return {
+            id: productId,
+            productId,
+            title: productId,
+            name: productId,
+            __needsHydration: true,
+          };
+        });
+      };
+
+      const similarStyleProductIds = normalizeSavedIds(
+        savedMetafields.similarStyleProduct,
+      );
+      const similarColorProductIds = normalizeSavedIds(
+        savedMetafields.similarColorProducts,
+      );
+      const matchWithAccessoryIds = normalizeSavedIds(
+        savedMetafields.matchWithAccessories,
+      );
+      const completeTheLookIds = normalizeSavedIds(
+        savedMetafields.completeTheLook,
+      );
+      const similarPrintProductIds = normalizeSavedIds(
+        savedMetafields.similarPrintProducts,
+      );
 
       setProductMetafields({
         productFaqs: savedMetafields.productFaqs || '',
@@ -1591,26 +1876,45 @@ async function reloadProduct(id: string) {
       });
 
       setSelectedMetafieldProducts({
-        similarStyleProduct: buildSelectedProducts('similarStyleProduct', similarStyleProductIds),
-        similarColorProducts: buildSelectedProducts('similarColorProducts', similarColorProductIds),
-        matchWithAccessories: buildSelectedProducts('matchWithAccessories', matchWithAccessoryIds),
-        completeTheLook: buildSelectedProducts('completeTheLook', completeTheLookIds),
-        similarPrintProducts: buildSelectedProducts('similarPrintProducts', similarPrintProductIds),
+        similarStyleProduct: buildSelectedProducts(
+          'similarStyleProduct',
+          similarStyleProductIds,
+        ),
+        similarColorProducts: buildSelectedProducts(
+          'similarColorProducts',
+          similarColorProductIds,
+        ),
+        matchWithAccessories: buildSelectedProducts(
+          'matchWithAccessories',
+          matchWithAccessoryIds,
+        ),
+        completeTheLook: buildSelectedProducts(
+          'completeTheLook',
+          completeTheLookIds,
+        ),
+        similarPrintProducts: buildSelectedProducts(
+          'similarPrintProducts',
+          similarPrintProductIds,
+        ),
       });
-hydrateSavedMetafieldProducts({
-  similarStyleProduct: similarStyleProductIds,
-  similarColorProducts: similarColorProductIds,
-  matchWithAccessories: matchWithAccessoryIds,
-  completeTheLook: completeTheLookIds,
-  similarPrintProducts: similarPrintProductIds,
-});
+
+      hydrateSavedMetafieldProducts({
+        similarStyleProduct: similarStyleProductIds,
+        similarColorProducts: similarColorProductIds,
+        matchWithAccessories: matchWithAccessoryIds,
+        completeTheLook: completeTheLookIds,
+        similarPrintProducts: similarPrintProductIds,
+      });
+
       const existingSimilarProducts =
         detail?.similarProducts ||
         detail?.relatedProducts ||
         detail?.recommendedProducts ||
         [];
 
-      setSimilarProducts(Array.isArray(existingSimilarProducts) ? existingSimilarProducts : []);
+      setSimilarProducts(
+        Array.isArray(existingSimilarProducts) ? existingSimilarProducts : [],
+      );
 
       setSelectedSimilarProductIds(similarStyleProductIds);
 
@@ -1654,14 +1958,10 @@ hydrateSavedMetafieldProducts({
 
       setCommerceForm({
         isShopEnabled: String(
-          detail?.isSellable ??
-            detail?.isShopEnabled ??
-            true,
+          detail?.isSellable ?? detail?.isShopEnabled ?? true,
         ),
         isRentalEnabled: String(
-          detail?.isRentable ??
-            detail?.isRentalEnabled ??
-            false,
+          detail?.isRentable ?? detail?.isRentalEnabled ?? false,
         ),
         isResaleEnabled: String(detail?.isResaleEnabled ?? false),
       });
@@ -1699,32 +1999,13 @@ hydrateSavedMetafieldProducts({
         urlHandle: nextSlug,
       }));
 
-      const nextCategories =
-        detail?.categories ||
-        detail?.categoryIds ||
-        detail?.productCategories ||
-        [];
+      const normalizedSavedCategoryIds =
+  normalizeSavedCategoryIdsFromProduct(detail);
 
-      if (Array.isArray(nextCategories)) {
-        setSelectedCategoryIds(
-          nextCategories
-            .map((item: any) =>
-              typeof item === 'string'
-                ? item
-                : item?.id || item?._id || item?.categoryId || '',
-            )
-            .filter(Boolean),
-        );
-      }
-
-      setPrimaryCategoryId(
-        detail?.primaryCategoryId ||
-          detail?.primaryCategory?.id ||
-          detail?.primaryCategory?._id ||
-          detail?.categoryId ||
-          detail?.category?.id ||
-          '',
-      );
+setSelectedCategoryIds(normalizedSavedCategoryIds);
+setPrimaryCategoryId(
+  getSavedPrimaryCategoryIdFromProduct(detail, normalizedSavedCategoryIds),
+);
     }
 
     if (mediaRes.status === 'fulfilled') {
@@ -1830,7 +2111,8 @@ async function hydrateSavedMetafieldProducts(
       slug: cleanUrlHandle,
       sku: basicForm.sku,
       mode: 'retail',
-      category: organizationForm.category || '',
+      category: getPrimaryAssignmentCategorySlug() || organizationForm.category || '',
+primaryCategory: getPrimaryAssignmentCategorySlug() || organizationForm.category || '',
       productType: organizationForm.productType || '',
 
   vendor: organizationForm.vendor || '',
@@ -1838,19 +2120,15 @@ async function hydrateSavedMetafieldProducts(
 
   color: '',
   fabric: String(productMetafields.fabric || ''),
-     
+
       occasion: '',
       composition: '',
       style: String(productMetafields.style || ''),
       print: String(productMetafields.print || ''),
       badge: String(productMetafields.customBadge || ''),
-      primaryCollection: Array.isArray(productMetafields.primaryCollection)
-        ? productMetafields.primaryCollection[0] || ''
-        : '',
-      secondaryCollection: Array.isArray(productMetafields.secondaryCollection)
-        ? productMetafields.secondaryCollection[0] || ''
-        : '',
-      categories: getSelectedCategorySlugs(),
+      primaryCollection: '',
+secondaryCollection: '',
+categories: getAssignmentCategorySlugs(),
       tags: organizationForm.tags
         .split(',')
         .map((item: string) => item.trim())
@@ -2022,51 +2300,6 @@ async function saveAvailability(e?: FormEvent) {
   }
 }
 
-function getSelectedCategorySlugs() {
-  const slugs: string[] = [];
-
-  function walk(items: any[]) {
-    items.forEach((item, index) => {
-      const id = String(
-        item.id ||
-          item._id ||
-          item.categoryId ||
-          item.slug ||
-          item.name ||
-          index,
-      );
-
-      if (selectedCategoryIds.includes(id)) {
-        const slug = getCategorySlug(item);
-        if (slug) slugs.push(slug);
-      }
-
-      const children =
-        item.children ||
-        item.subcategories ||
-        item.items ||
-        item.nodes ||
-        [];
-
-      if (Array.isArray(children)) {
-        walk(children);
-      }
-    });
-  }
-
-  walk(categoryTree);
-
-  return Array.from(new Set(slugs));
-}
-
-function getPrimaryCategorySlug() {
-  const primary = primaryCategoryId
-    ? findCategoryById(categoryTree, primaryCategoryId)
-    : null;
-
-  return primary ? getCategorySlug(primary) : '';
-}
-
   async function saveOrganization(e?: FormEvent) {
   e?.preventDefault();
 
@@ -2107,14 +2340,13 @@ const primaryIdSnapshot = primaryCategoryId;
   }),
 
   adminCatalogService.updateCollections(currentProductId, {
-    primaryCollection:
-      primarySlug ||
-      categorySlugs[0] ||
-      organizationForm.category ||
-      '',
-    secondaryCollection: categorySlugs[1] || '',
-    categories: categorySlugs,
-  }),
+  collection: '',
+  category: primarySlug || categorySlugs[0] || '',
+  primaryCategory: primarySlug || categorySlugs[0] || '',
+  primaryCollection: '',
+  secondaryCollection: '',
+  categories: categorySlugs.length > 0 ? [primarySlug || categorySlugs[0]] : [],
+}),
 ]);
 
     await reloadProduct(currentProductId);
@@ -2127,6 +2359,7 @@ setPrimaryCategoryId(primaryIdSnapshot);
     setSaving(false);
   }
 }
+
 async function saveCategories(e?: FormEvent) {
   e?.preventDefault();
 
@@ -2136,20 +2369,27 @@ async function saveCategories(e?: FormEvent) {
   }
 
   const selectedIdsSnapshot = [...selectedCategoryIds];
-  const primaryIdSnapshot = primaryCategoryId;
+  const primaryIdSnapshot =
+    primaryCategoryId && selectedIdsSnapshot.includes(primaryCategoryId)
+      ? primaryCategoryId
+      : selectedIdsSnapshot[0] || '';
 
   setSaving(true);
   setError('');
 
   try {
     const categorySlugs = getSelectedCategorySlugs();
-    const primarySlug = getPrimaryCategorySlug();
+const primarySlug = getPrimaryCategorySlug();
+const selectedLeafSlug = primarySlug || categorySlugs[0] || '';
 
-    await adminCatalogService.updateCollections(currentProductId, {
-      primaryCollection: primarySlug || categorySlugs[0] || '',
-      secondaryCollection: categorySlugs[1] || '',
-      categories: categorySlugs,
-    });
+await adminCatalogService.updateCollections(currentProductId, {
+  collection: '',
+  category: selectedLeafSlug,
+  primaryCategory: selectedLeafSlug,
+  primaryCollection: '',
+  secondaryCollection: '',
+  categories: selectedLeafSlug ? [selectedLeafSlug] : [],
+});
 
     setSelectedCategoryIds(selectedIdsSnapshot);
     setPrimaryCategoryId(primaryIdSnapshot);
@@ -3474,13 +3714,13 @@ async function unpublishProduct() {
 
 <Card>
   <ProductCategoryTreeSelector
-    categories={categoryTree}
-    selectedCategoryIds={selectedCategoryIds}
-    primaryCategoryId={primaryCategoryId}
-    onSelectedChange={setSelectedCategoryIds}
-    onPrimaryChange={setPrimaryCategoryId}
-    onAddCategory={addCategoryFromProductEditor}
-  />
+  categories={categoryTree}
+  selectedCategoryIds={selectedCategoryIds}
+  primaryCategoryId={primaryCategoryId}
+  onSelectedChange={handleCategorySelectionChange}
+  onPrimaryChange={handlePrimaryCategoryChange}
+  onAddCategory={addCategoryFromProductEditor}
+/>
 
   {mode === 'edit' && (
     <div className="mt-4 flex justify-end">
