@@ -465,16 +465,16 @@ useEffect(() => {
       if (!next[key]) {
       next[key] = {
   name:
-    item?.alt ||
-    item?.caption ||
     item?.name ||
+    item?.caption ||
+    item?.imageName ||
     item?.title ||
     item?.fileName ||
     item?.originalName ||
     '',
   altText:
-    item?.alt ||
     item?.altText ||
+    item?.alt ||
     item?.alt_text ||
     item?.description ||
     '',
@@ -544,16 +544,16 @@ useEffect(() => {
       if (!next[key]) {
        next[key] = {
   name:
-    item?.alt ||
-    item?.caption ||
     item?.name ||
+    item?.caption ||
+    item?.imageName ||
     item?.title ||
     item?.fileName ||
     item?.originalName ||
     '',
   altText:
-    item?.alt ||
     item?.altText ||
+    item?.alt ||
     item?.alt_text ||
     item?.description ||
     '',
@@ -1583,8 +1583,8 @@ async function saveMediaMetadata(item: any, index: number) {
 
   const mediaName =
     edit?.name ||
-    item?.caption ||
     item?.name ||
+    item?.caption ||
     item?.title ||
     item?.fileName ||
     item?.imageName ||
@@ -1593,6 +1593,7 @@ async function saveMediaMetadata(item: any, index: number) {
   const mediaAltText =
     edit?.altText ||
     item?.altText ||
+    item?.alt ||
     item?.alt_text ||
     item?.description ||
     '';
@@ -1606,6 +1607,7 @@ async function saveMediaMetadata(item: any, index: number) {
       edit,
       mediaName,
       mediaAltText,
+      currentName: item?.name || '',
       currentAlt: item?.alt || '',
       currentAltText: item?.altText || '',
       currentCaption: item?.caption || '',
@@ -1635,11 +1637,15 @@ async function saveMediaMetadata(item: any, index: number) {
   setError('');
 
   try {
-  const payload = {
-  alt: mediaAltText || mediaName,
-  position: index,
-  isPrimary: Boolean(item?.isPrimary),
-};
+    const payload = {
+      name: mediaName,
+      altText: mediaAltText,
+      caption: mediaName,
+      viewType: isVideoMedia(item) ? 'video' : item?.viewType || 'front',
+      position: index,
+      colorName: item?.colorName || '',
+      isPrimary: Boolean(item?.isPrimary),
+    };
 
     await logToTerminal(
       'SAVE_MEDIA_DETAILS_REQUEST',
@@ -2021,6 +2027,45 @@ setPrimaryCategoryId(
     setError(getApiErrorMessage(err));
   }
 }
+function buildMetafieldProductStub(id: string) {
+  return {
+    id,
+    productId: id,
+    title: id,
+    name: id,
+  };
+}
+
+function applyHydratedMetafieldProducts(
+  idsByField: Record<ProductPickerMetafield, string[]>,
+  productMap: Map<string, any>,
+) {
+  const resolve = (id: string) =>
+    productMap.get(id) || buildMetafieldProductStub(id);
+
+  setSelectedMetafieldProducts({
+    similarStyleProduct: idsByField.similarStyleProduct.map(resolve),
+    similarColorProducts: idsByField.similarColorProducts.map(resolve),
+    matchWithAccessories: idsByField.matchWithAccessories.map(resolve),
+    completeTheLook: idsByField.completeTheLook.map(resolve),
+    similarPrintProducts: idsByField.similarPrintProducts.map(resolve),
+  });
+}
+
+async function loadProductsForMetafieldHydration(): Promise<Map<string, any>> {
+  const productMap = new Map<string, any>();
+
+  const listRes = await adminCatalogService.list({ page: 1, limit: 200 });
+  const products = unwrapCatalogProducts(listRes);
+
+  products.forEach((product: any) => {
+    const id = getProductId(product);
+    if (id) productMap.set(id, product);
+  });
+
+  return productMap;
+}
+
 async function hydrateSavedMetafieldProducts(
   idsByField: Record<ProductPickerMetafield, string[]>,
 ) {
@@ -2031,67 +2076,11 @@ async function hydrateSavedMetafieldProducts(
   if (allIds.length === 0) return;
 
   try {
-    const res = await adminCatalogService.getProductPicker({
-      search: '',
-      searchBy: 'all',
-      status: 'all',
-      page: 1,
-      limit: 200,
-    });
-
-    const products = unwrapList(res);
-
-    const productMap = new Map<string, any>();
-
-    products.forEach((product: any) => {
-      const id = getProductId(product);
-      if (id) productMap.set(id, product);
-    });
-
-    setSelectedMetafieldProducts({
-      similarStyleProduct: idsByField.similarStyleProduct.map((id) =>
-        productMap.get(id) || {
-          id,
-          productId: id,
-          title: id,
-          name: id,
-        },
-      ),
-      similarColorProducts: idsByField.similarColorProducts.map((id) =>
-        productMap.get(id) || {
-          id,
-          productId: id,
-          title: id,
-          name: id,
-        },
-      ),
-      matchWithAccessories: idsByField.matchWithAccessories.map((id) =>
-        productMap.get(id) || {
-          id,
-          productId: id,
-          title: id,
-          name: id,
-        },
-      ),
-      completeTheLook: idsByField.completeTheLook.map((id) =>
-        productMap.get(id) || {
-          id,
-          productId: id,
-          title: id,
-          name: id,
-        },
-      ),
-      similarPrintProducts: idsByField.similarPrintProducts.map((id) =>
-        productMap.get(id) || {
-          id,
-          productId: id,
-          title: id,
-          name: id,
-        },
-      ),
-    });
+    const productMap = await loadProductsForMetafieldHydration();
+    applyHydratedMetafieldProducts(idsByField, productMap);
   } catch (err: any) {
     console.warn('Saved metafield product hydration failed:', err);
+    applyHydratedMetafieldProducts(idsByField, new Map());
   }
 }
   async function createProduct(e?: FormEvent) {
@@ -2726,8 +2715,12 @@ async function uploadSelectedMedia() {
 
       if (!imageId || !selected) continue;
 const payload = {
-  alt: selected.altText || selected.name || selected.file.name,
+  name: selected.name || selected.file.name,
+  altText: selected.altText || selected.name || selected.file.name,
+  caption: selected.name || selected.file.name,
+  viewType: 'front',
   position: media.length + i,
+  colorName: '',
   isPrimary: media.length === 0 && i === 0,
 };
 
@@ -2767,8 +2760,12 @@ const payload = {
       }
 
 const payload = {
-  alt: selected.altText || selected.name || selected.file.name,
+  name: selected.name || selected.file.name,
+  altText: selected.altText || selected.name || selected.file.name,
+  caption: selected.name || selected.file.name,
+  viewType: 'video',
   position: media.length + imageItems.length + i,
+  colorName: '',
   isPrimary: false,
 };
 
