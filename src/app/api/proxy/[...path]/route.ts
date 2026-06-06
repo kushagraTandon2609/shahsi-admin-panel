@@ -1,7 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const BACKEND_API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://65.1.135.224:3001";
+import { BACKEND_API_URL } from "@/lib/backend-api-url";
 
 type Context = {
   params: Promise<{
@@ -20,7 +18,6 @@ async function proxyRequest(request: NextRequest, context: Context) {
   }`;
 
   const headers = new Headers();
-
   const authorization = request.headers.get("authorization");
   const contentType = request.headers.get("content-type");
 
@@ -30,15 +27,17 @@ async function proxyRequest(request: NextRequest, context: Context) {
 
   if (contentType) {
     headers.set("content-type", contentType);
-  } else {
-    headers.set("content-type", "application/json");
   }
 
   let body: BodyInit | undefined;
 
   if (request.method !== "GET" && request.method !== "HEAD") {
-    const text = await request.text();
-    body = text || undefined;
+    if (contentType?.includes("multipart/form-data")) {
+      body = await request.arrayBuffer();
+    } else {
+      const text = await request.text();
+      body = text || undefined;
+    }
   }
 
   try {
@@ -71,7 +70,7 @@ async function proxyRequest(request: NextRequest, context: Context) {
       },
       {
         status: 500,
-      }
+      },
     );
   }
 }

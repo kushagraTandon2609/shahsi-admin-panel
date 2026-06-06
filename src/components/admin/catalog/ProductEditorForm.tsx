@@ -432,59 +432,7 @@ setSelectedMetafieldProducts({
 });
 
   }, [initialProduct, initialMedia, initialVariants]);
-useEffect(() => {
-  setMediaEdits((prev) => {
-    const next = { ...prev };
 
-    media.forEach((item, index) => {
-      const mediaId =
-        item?.id ||
-        item?.imageId ||
-        item?.mediaId ||
-        item?._id ||
-        item?.productImageId ||
-        item?.publicId ||
-        '';
-
-      const mediaUrl =
-        item?.url ||
-        item?.secureUrl ||
-        item?.secure_url ||
-        item?.imageUrl ||
-        item?.image ||
-        item?.videoUrl ||
-        item?.path ||
-        item?.src ||
-        item?.mediaUrl ||
-        item?.fileUrl ||
-        item?.cloudinaryUrl ||
-        '';
-
-      const key = mediaId || mediaUrl || `media-${index}`;
-
-      if (!next[key]) {
-      next[key] = {
-  name:
-    item?.name ||
-    item?.caption ||
-    item?.imageName ||
-    item?.title ||
-    item?.fileName ||
-    item?.originalName ||
-    '',
-  altText:
-    item?.altText ||
-    item?.alt ||
-    item?.alt_text ||
-    item?.description ||
-    '',
-};
-      }
-    });
-
-    return next;
-  });
-}, [media]);
   const currentProductId =
     productId || product?.id || product?.productId || product?._id || '';
 
@@ -541,24 +489,22 @@ useEffect(() => {
     media.forEach((item, index) => {
       const key = getMediaEditKey(item, index);
 
-      if (!next[key]) {
-       next[key] = {
-  name:
-    item?.name ||
-    item?.caption ||
-    item?.imageName ||
-    item?.title ||
-    item?.fileName ||
-    item?.originalName ||
-    '',
-  altText:
-    item?.altText ||
-    item?.alt ||
-    item?.alt_text ||
-    item?.description ||
-    '',
-};
-      }
+      next[key] = {
+        name:
+          item?.name ||
+          item?.caption ||
+          item?.imageName ||
+          item?.title ||
+          item?.fileName ||
+          item?.originalName ||
+          '',
+        altText:
+          item?.altText ||
+          item?.alt ||
+          item?.alt_text ||
+          item?.description ||
+          '',
+      };
     });
 
     return next;

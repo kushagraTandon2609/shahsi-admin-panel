@@ -1,12 +1,7 @@
-const BACKEND_API_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://65.1.135.224:3001";
+import { getApiBaseUrl } from "@/lib/backend-api-url";
 
 function getBaseUrl() {
-  if (typeof window !== "undefined") {
-    return "/api/proxy";
-  }
-
-  return BACKEND_API_URL;
+  return getApiBaseUrl();
 }
 
 function getToken() {

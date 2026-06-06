@@ -1,13 +1,14 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { getAdminToken, removeAdminToken } from './admin-auth';
+import { BACKEND_API_URL, getApiBaseUrl } from './backend-api-url';
 import { logClientError } from './client-logger';
 
-export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://65.1.135.224:3001';
+export { BACKEND_API_URL };
+export const API_BASE_URL = BACKEND_API_URL;
 
 export const api = axios.create({
-  baseURL: API_BASE_URL.replace(/\/$/, ''),
-  timeout: 30000,
+  baseURL: getApiBaseUrl(),
+  timeout: 120000,
   withCredentials: false,
   paramsSerializer: {
     indexes: null,
