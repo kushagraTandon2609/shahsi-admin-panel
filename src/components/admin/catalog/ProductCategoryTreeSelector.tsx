@@ -57,13 +57,22 @@ function getCategoryChildren(category: any) {
 }
 
 function getCategoryProductCount(category: any) {
-  return category?.productCount || category?.productsCount || category?.count || 0;
+  return (
+    category?.directProductCount ||
+    category?.productCount ||
+    category?.productsCount ||
+    category?.count ||
+    0
+  );
 }
 
 function getCategoryImage(category: any) {
   return (
-    category?.image ||
     category?.imageUrl ||
+    category?.categoryImageUrl ||
+    category?.image?.url ||
+    category?.image?.secureUrl ||
+    category?.image ||
     category?.thumbnail ||
     category?.coverImage ||
     category?.media?.[0]?.url ||
@@ -148,9 +157,9 @@ export function ProductCategoryTreeSelector({
   }, [categories, search]);
 
   const selectedCategories = useMemo(() => {
-    return flatCategories.filter((category) =>
-      selectedCategoryIds.includes(category.__id),
-    );
+    return selectedCategoryIds
+      .map((id) => flatCategories.find((category) => category.__id === id))
+      .filter(Boolean);
   }, [flatCategories, selectedCategoryIds]);
 
   const primaryCategory = useMemo(() => {
@@ -173,26 +182,22 @@ export function ProductCategoryTreeSelector({
     );
   }
 
-    function toggleSelected(id: string) {
+  function toggleSelected(id: string) {
     const alreadySelected = selectedCategoryIds.includes(id);
 
     if (alreadySelected) {
-      const idsToRemove = getDescendantIdsFromTree(id);
-      const nextIds = selectedCategoryIds.filter(
-        (item) => !idsToRemove.includes(item),
-      );
+      const nextIds = selectedCategoryIds.filter((item) => item !== id);
 
       onSelectedChange(nextIds);
 
-      if (primaryCategoryId && !nextIds.includes(primaryCategoryId)) {
+      if (primaryCategoryId === id) {
         onPrimaryChange(nextIds[0] || '');
       }
 
       return;
     }
 
-    const pathIds = getCategoryPathIdsFromFlat(id);
-    const nextIds = Array.from(new Set([...selectedCategoryIds, ...pathIds]));
+    const nextIds = Array.from(new Set([...selectedCategoryIds, id]));
 
     onSelectedChange(nextIds);
 
@@ -201,23 +206,20 @@ export function ProductCategoryTreeSelector({
     }
   }
 
-    function removeSelected(id: string) {
-    const idsToRemove = getDescendantIdsFromTree(id);
-    const nextIds = selectedCategoryIds.filter(
-      (item) => !idsToRemove.includes(item),
-    );
+  function removeSelected(id: string) {
+    const nextIds = selectedCategoryIds.filter((item) => item !== id);
 
     onSelectedChange(nextIds);
 
-    if (primaryCategoryId && !nextIds.includes(primaryCategoryId)) {
+    if (primaryCategoryId === id) {
       onPrimaryChange(nextIds[0] || '');
     }
   }
 
-    function makePrimary(id: string) {
+  function makePrimary(id: string) {
     const nextIds = selectedCategoryIds.includes(id)
       ? selectedCategoryIds
-      : Array.from(new Set([...selectedCategoryIds, ...getCategoryPathIdsFromFlat(id)]));
+      : Array.from(new Set([...selectedCategoryIds, id]));
 
     if (!selectedCategoryIds.includes(id)) {
       onSelectedChange(nextIds);
@@ -249,79 +251,6 @@ export function ProductCategoryTreeSelector({
     } finally {
       setAdding(false);
     }
-  }
-  function getCategoryPathIdsFromFlat(categoryId: string) {
-    const target = flatCategories.find((category) => category.__id === categoryId);
-
-    if (!target) return [];
-
-    const pathIds: string[] = [];
-
-    function walk(items: any[], path: string[] = []): boolean {
-      for (let index = 0; index < items.length; index += 1) {
-        const item = items[index];
-        const id = getCategoryId(item, index);
-        const nextPath = [...path, id];
-
-        if (id === categoryId) {
-          pathIds.push(...nextPath);
-          return true;
-        }
-
-        const children = getCategoryChildren(item);
-
-        if (children.length > 0 && walk(children, nextPath)) {
-          return true;
-        }
-      }
-
-      return false;
-    }
-
-    walk(categories);
-
-    return Array.from(new Set(pathIds));
-  }
-
-  function getDescendantIdsFromTree(categoryId: string) {
-    const output: string[] = [];
-
-    function walk(items: any[]) {
-      items.forEach((item, index) => {
-        const id = getCategoryId(item, index);
-
-        if (id === categoryId) {
-          collect(item);
-          return;
-        }
-
-        walk(getCategoryChildren(item));
-      });
-    }
-
-    function collect(item: any) {
-      const id = getCategoryId(item);
-
-      if (id) output.push(id);
-
-      getCategoryChildren(item).forEach(collect);
-    }
-
-    walk(categories);
-
-    return Array.from(new Set(output));
-  }
-
-  function getLeafSelectedIds() {
-    return selectedCategoryIds.filter((categoryId) => {
-      return !selectedCategoryIds.some((otherId) => {
-        if (otherId === categoryId) return false;
-
-        const otherPath = getCategoryPathIdsFromFlat(otherId);
-
-        return otherPath.includes(categoryId);
-      });
-    });
   }
 
   function renderTree(items: any[], level = 0) {
@@ -405,8 +334,9 @@ export function ProductCategoryTreeSelector({
                     )}
                   </div>
 
-                                    <p className="mt-0.5 text-xs text-gray-400">
-                    {productCount} direct product{Number(productCount) === 1 ? '' : 's'}
+                  <p className="mt-0.5 text-xs text-gray-400">
+                    {productCount} direct product
+                    {Number(productCount) === 1 ? '' : 's'}
                   </p>
                 </div>
 
@@ -437,8 +367,9 @@ export function ProductCategoryTreeSelector({
           <h2 className="text-base font-semibold text-gray-950">Categories</h2>
 
           <p className="mt-1 text-sm text-gray-500">
-  Select the target category. Parent categories will be checked automatically for context.
-</p>
+            Select one or more categories. Only the categories you manually select
+            will be assigned to this product.
+          </p>
 
           {primaryCategory && (
             <p className="mt-2 text-xs text-gray-500">
@@ -518,51 +449,49 @@ export function ProductCategoryTreeSelector({
         </div>
       )}
 
-      {selectedCategories.filter((category) => getLeafSelectedIds().includes(category.__id)).length > 0 && (
-  <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
-    <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
-      Selected target categories
-    </p>
+      {selectedCategories.length > 0 && (
+        <div className="mb-4 rounded-2xl border border-gray-200 bg-gray-50 p-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-gray-500">
+            Selected categories
+          </p>
 
-    <div className="flex flex-wrap gap-2">
-      {selectedCategories
-        .filter((category) => getLeafSelectedIds().includes(category.__id))
-        .map((category) => (
-          <span
-            key={category.__id}
-            className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700"
-          >
-            {primaryCategoryId === category.__id && <Star size={12} />}
-            {getCategoryName(category)}
-
-            {primaryCategoryId === category.__id && (
-              <span className="rounded-full bg-black px-2 py-0.5 text-[10px] text-white">
-                Primary
-              </span>
-            )}
-
-            {primaryCategoryId !== category.__id && (
-              <button
-                type="button"
-                onClick={() => makePrimary(category.__id)}
-                className="font-semibold text-gray-500 hover:text-black"
+          <div className="flex flex-wrap gap-2">
+            {selectedCategories.map((category: any) => (
+              <span
+                key={category.__id}
+                className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-3 py-1 text-xs text-gray-700"
               >
-                Set primary
-              </button>
-            )}
+                {primaryCategoryId === category.__id && <Star size={12} />}
+                {getCategoryName(category)}
 
-            <button
-              type="button"
-              onClick={() => removeSelected(category.__id)}
-              className="text-gray-400 hover:text-red-600"
-            >
-              <X size={13} />
-            </button>
-          </span>
-        ))}
-    </div>
-  </div>
-)}
+                {primaryCategoryId === category.__id && (
+                  <span className="rounded-full bg-black px-2 py-0.5 text-[10px] text-white">
+                    Primary
+                  </span>
+                )}
+
+                {primaryCategoryId !== category.__id && (
+                  <button
+                    type="button"
+                    onClick={() => makePrimary(category.__id)}
+                    className="font-semibold text-gray-500 hover:text-black"
+                  >
+                    Set primary
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => removeSelected(category.__id)}
+                  className="text-gray-400 hover:text-red-600"
+                >
+                  <X size={13} />
+                </button>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="max-h-[420px] overflow-y-auto rounded-2xl border border-gray-200 bg-white p-3">
         {categories.length === 0 ? (

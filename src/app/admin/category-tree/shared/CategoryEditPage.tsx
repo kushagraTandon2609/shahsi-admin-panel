@@ -263,15 +263,16 @@ function getProductDirectCategorySlug(product: any) {
 
 function isProductDirectlyAssignedToCategory(product: any, categorySlug: string) {
   const normalizedCategorySlug = normalizeSlugValue(categorySlug);
+
   if (!normalizedCategorySlug) return true;
 
   const directSlug = getProductDirectCategorySlug(product);
+  const selectedCategorySlugs = getProductCategorySlugs(product);
 
-  if (directSlug) {
-    return directSlug === normalizedCategorySlug;
-  }
-
-  return getProductCategorySlugs(product).includes(normalizedCategorySlug);
+  return (
+    directSlug === normalizedCategorySlug ||
+    selectedCategorySlugs.includes(normalizedCategorySlug)
+  );
 }
 
 function getProductTitleForSort(product: any) {

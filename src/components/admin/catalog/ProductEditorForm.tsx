@@ -1240,7 +1240,7 @@ function getLeafSelectedCategoryIds(sourceIds: string[] = selectedCategoryIds) {
 }
 
 function getAssignmentCategoryIds() {
-  return getLeafSelectedCategoryIds(selectedCategoryIds);
+  return Array.from(new Set(selectedCategoryIds.filter(Boolean)));
 }
 
 function getAssignmentCategorySlugs() {
@@ -1273,22 +1273,17 @@ function getPrimaryAssignmentCategorySlug() {
 }
 
 function normalizeSavedCategoryIdsFromProduct(productData: any) {
-  const directValues = [
-    productData?.primaryCategory,
-    productData?.category,
-    productData?.primaryCategoryId,
-    productData?.categoryId,
-  ].filter(Boolean);
-
-  const fallbackValues = [
+  const rawValues = [
     ...(Array.isArray(productData?.categories) ? productData.categories : []),
     ...(Array.isArray(productData?.categoryIds) ? productData.categoryIds : []),
     ...(Array.isArray(productData?.productCategories)
       ? productData.productCategories
       : []),
+    productData?.primaryCategory,
+    productData?.category,
+    productData?.primaryCategoryId,
+    productData?.categoryId,
   ].filter(Boolean);
-
-  const rawValues = directValues.length > 0 ? directValues : fallbackValues;
 
   const matchedIds = rawValues
     .map((item: any) => {
@@ -1313,13 +1308,7 @@ function normalizeSavedCategoryIdsFromProduct(productData: any) {
     })
     .filter(Boolean);
 
-  const leafIds = getLeafSelectedCategoryIds(matchedIds);
-
-  const idsWithParents = leafIds.flatMap((categoryId) =>
-    getCategoryPathIds(categoryId),
-  );
-
-  return Array.from(new Set(idsWithParents));
+  return Array.from(new Set(matchedIds));
 }
 
 function getSelectedCategorySlugs() {
@@ -1331,44 +1320,16 @@ function getPrimaryCategorySlug() {
 }
 
 function handleCategorySelectionChange(nextIds: string[]) {
-  const addedIds = nextIds.filter((id) => !selectedCategoryIds.includes(id));
-  const removedIds = selectedCategoryIds.filter((id) => !nextIds.includes(id));
-
-  let nextSelected = [...selectedCategoryIds];
-
-  addedIds.forEach((categoryId) => {
-    const category =
-      findCategoryById(categoryTree, categoryId) ||
-      findCategoryByAnyValue(categoryTree, categoryId);
-
-    if (!category) return;
-
-    const pathIds = getCategoryPathIds(getCategorySelectionId(category));
-
-    nextSelected = Array.from(new Set([...nextSelected, ...pathIds]));
-  });
-
-  removedIds.forEach((categoryId) => {
-    const category =
-      findCategoryById(categoryTree, categoryId) ||
-      findCategoryByAnyValue(categoryTree, categoryId);
-
-    if (!category) {
-      nextSelected = nextSelected.filter((id) => id !== categoryId);
-      return;
-    }
-
-    const idsToRemove = getDescendantCategoryIds(category);
-
-    nextSelected = nextSelected.filter((id) => !idsToRemove.includes(id));
-  });
-
-  nextSelected = Array.from(new Set(nextSelected));
+  const nextSelected = Array.from(new Set(nextIds.filter(Boolean)));
 
   setSelectedCategoryIds(nextSelected);
 
   if (primaryCategoryId && !nextSelected.includes(primaryCategoryId)) {
     setPrimaryCategoryId(nextSelected[0] || '');
+  }
+
+  if (!primaryCategoryId && nextSelected.length > 0) {
+    setPrimaryCategoryId(nextSelected[0]);
   }
 }
 
@@ -2039,40 +2000,39 @@ async function hydrateSavedMetafieldProducts(
       seoForm.urlHandle || basicForm.slug || basicForm.title,
     );
 
-    const payload = {
-      title: basicForm.title,
-      description: basicForm.description,
-      shortDescription: stripHtml(basicForm.description).slice(0, 180),
-      slug: cleanUrlHandle,
-      sku: basicForm.sku,
-      mode: 'retail',
-      category: getPrimaryAssignmentCategorySlug() || organizationForm.category || '',
-primaryCategory: getPrimaryAssignmentCategorySlug() || organizationForm.category || '',
-      productType: organizationForm.productType || '',
+    const categorySlugs = getSelectedCategorySlugs();
+const primarySlug = getPrimaryCategorySlug();
+const selectedPrimarySlug = primarySlug || categorySlugs[0] || organizationForm.category || '';
 
+const payload = {
+  title: basicForm.title,
+  description: basicForm.description,
+  shortDescription: stripHtml(basicForm.description).slice(0, 180),
+  slug: cleanUrlHandle,
+  sku: basicForm.sku,
+  mode: 'retail',
+  category: selectedPrimarySlug,
+  primaryCategory: selectedPrimarySlug,
+  productType: organizationForm.productType || '',
   vendor: organizationForm.vendor || '',
-
-
   color: '',
   fabric: String(productMetafields.fabric || ''),
-
-      occasion: '',
-      composition: '',
-      style: String(productMetafields.style || ''),
-      print: String(productMetafields.print || ''),
-      badge: String(productMetafields.customBadge || ''),
-      primaryCollection: '',
-secondaryCollection: '',
-categories: getAssignmentCategorySlugs(),
-      tags: organizationForm.tags
-        .split(',')
-        .map((item: string) => item.trim())
-        .filter(Boolean),
-      careInstructions: Array.isArray(productMetafields.careInstructions)
-        ? productMetafields.careInstructions
-        : [],
-    };
-
+  occasion: '',
+  composition: '',
+  style: String(productMetafields.style || ''),
+  print: String(productMetafields.print || ''),
+  badge: String(productMetafields.customBadge || ''),
+  primaryCollection: '',
+  secondaryCollection: '',
+  categories: categorySlugs,
+  tags: organizationForm.tags
+    .split(',')
+    .map((item: string) => item.trim())
+    .filter(Boolean),
+  careInstructions: Array.isArray(productMetafields.careInstructions)
+    ? productMetafields.careInstructions
+    : [],
+};
     const res = await adminCatalogService.create(payload);
     const created = unwrapObject(res);
 
@@ -2275,13 +2235,13 @@ const primaryIdSnapshot = primaryCategoryId;
   }),
 
   adminCatalogService.updateCollections(currentProductId, {
-  collection: '',
-  category: primarySlug || categorySlugs[0] || '',
-  primaryCategory: primarySlug || categorySlugs[0] || '',
-  primaryCollection: '',
-  secondaryCollection: '',
-  categories: categorySlugs.length > 0 ? [primarySlug || categorySlugs[0]] : [],
-}),
+    collection: '',
+    category: primarySlug || categorySlugs[0] || '',
+    primaryCategory: primarySlug || categorySlugs[0] || '',
+    primaryCollection: '',
+    secondaryCollection: '',
+    categories: categorySlugs,
+  }),
 ]);
 
     await reloadProduct(currentProductId);
@@ -2315,15 +2275,15 @@ async function saveCategories(e?: FormEvent) {
   try {
     const categorySlugs = getSelectedCategorySlugs();
 const primarySlug = getPrimaryCategorySlug();
-const selectedLeafSlug = primarySlug || categorySlugs[0] || '';
+const selectedPrimarySlug = primarySlug || categorySlugs[0] || '';
 
 await adminCatalogService.updateCollections(currentProductId, {
   collection: '',
-  category: selectedLeafSlug,
-  primaryCategory: selectedLeafSlug,
+  category: selectedPrimarySlug,
+  primaryCategory: selectedPrimarySlug,
   primaryCollection: '',
   secondaryCollection: '',
-  categories: selectedLeafSlug ? [selectedLeafSlug] : [],
+  categories: categorySlugs,
 });
 
     setSelectedCategoryIds(selectedIdsSnapshot);
