@@ -57,13 +57,7 @@ function getCategoryChildren(category: any) {
 }
 
 function getCategoryProductCount(category: any) {
-  return (
-    category?.directProductCount ||
-    category?.productCount ||
-    category?.productsCount ||
-    category?.count ||
-    0
-  );
+  return Number(category?.directProductCount ?? 0);
 }
 
 function getCategoryImage(category: any) {

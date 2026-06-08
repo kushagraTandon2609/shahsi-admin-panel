@@ -26,6 +26,11 @@ function extractList(response: any) {
     objectData?.images ||
     objectData?.videos ||
     objectData?.variants ||
+    objectData?.data?.items ||
+    objectData?.data?.media ||
+    objectData?.data?.images ||
+    objectData?.data?.videos ||
+    objectData?.data?.variants ||
     objectData?.data ||
     [];
 

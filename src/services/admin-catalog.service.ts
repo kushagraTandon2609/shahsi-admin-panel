@@ -8,21 +8,11 @@ type VariantStockPayload = {
 };
 
 function makeFormData(
-  fieldName: 'images' | 'video' | 'videos',
+  fieldName: 'images' | 'image' | 'file' | 'video' | 'videos',
   input: FormData | File[] | FileList,
 ) {
   if (input instanceof FormData) {
-    const formData = new FormData();
-
-    input.forEach((value, key) => {
-      if (value instanceof File) {
-        formData.append(fieldName, value);
-      } else {
-        formData.append(key, value);
-      }
-    });
-
-    return formData;
+    return input;
   }
 
   const formData = new FormData();
@@ -147,83 +137,70 @@ export const adminCatalogService = {
   // =====================================================
 
   uploadImages: async (id: string, input: FormData | File[] | FileList) => {
-    const formData = makeFormData('images', input);
-
+    const files = getFilesFromInput(input);
+  
+    const formData = new FormData();
+  
+    if (files.length > 0) {
+      files.forEach((file) => {
+        formData.append('images', file);
+      });
+    } else if (input instanceof FormData) {
+      input.forEach((value, key) => {
+        if (value instanceof File) {
+          formData.append('images', value);
+        } else {
+          formData.append(key, value);
+        }
+      });
+    }
+  
     const res = await api.post(
       `/catalog/${encodeURIComponent(id)}/images`,
       formData,
     );
-
+  
     return res.data;
   },
 
   uploadImage: async (id: string, input: FormData | File[] | FileList) => {
-    const formData = makeFormData('images', input);
-
-    const res = await api.post(
-      `/catalog/${encodeURIComponent(id)}/images`,
-      formData,
-    );
-
-    return res.data;
+    return adminCatalogService.uploadImages(id, input);
   },
 
   uploadVideo: async (id: string, input: FormData | File[] | FileList) => {
     const files = getFilesFromInput(input);
-
-    if (files.length === 0) {
-      const formData = makeFormData('video', input);
-
-      const res = await api.post(
-        `/catalog/${encodeURIComponent(id)}/video`,
-        formData,
-      );
-
-      return res.data;
-    }
-
+  
     const results = [];
-
-    for (const file of files) {
-      const formData = new FormData();
-     formData.append('file', file);
-
-      const res = await api.post(
-        `/catalog/${encodeURIComponent(id)}/video`,
-        formData,
-      );
-
-      results.push(res.data);
+  
+    if (files.length > 0) {
+      for (const file of files) {
+        const formData = new FormData();
+  
+        formData.append('video', file);
+  
+        const res = await api.post(
+          `/catalog/${encodeURIComponent(id)}/video`,
+          formData,
+        );
+  
+        results.push(res.data);
+      }
+  
+      return results.length === 1 ? results[0] : results;
     }
-
-    return results.length === 1 ? results[0] : results;
+  
+    const res = await api.post(
+      `/catalog/${encodeURIComponent(id)}/video`,
+      input instanceof FormData ? input : makeFormData('video', input),
+    );
+  
+    return res.data;
   },
 
   uploadVideos: async (id: string, input: FormData | File[] | FileList) => {
-  const files = getFilesFromInput(input);
+    return adminCatalogService.uploadVideo(id, input);
+  },
 
-  const formData = new FormData();
-
-  if (files.length > 0) {
-    for (const file of files) {
-      // Backend Swagger ke according field name "videos" hai
-      formData.append('videos', file);
-    }
-  } else if (input instanceof FormData) {
-    input.forEach((value) => {
-      if (value instanceof File) {
-        formData.append('videos', value);
-      }
-    });
-  }
-
-  const res = await api.post(
-    `/catalog/${encodeURIComponent(id)}/video`,
-    formData,
-  );
-
-  return res.data;
-},
   deleteImage: async (imageId: string) => {
     const res = await api.delete(
       `/catalog/images/${encodeURIComponent(imageId)}`,
@@ -338,32 +315,24 @@ export const adminCatalogService = {
   // =====================================================
 
   updateBasicInfo: async (id: string, payload: any) => {
-    const res = await api.patch(`/admin/catalog/${encodeURIComponent(id)}/basic-info`, {
-      title: payload.title,
-      name: payload.name,
-      description: payload.description,
-      shortDescription: payload.shortDescription,
+  const res = await api.patch(
+    `/admin/catalog/${encodeURIComponent(id)}/basic-info`,
+    {
+      title: payload.title || '',
+      description: payload.description || '',
+      shortDescription: payload.shortDescription || '',
+      category: payload.category || '',
+      productType: payload.productType || '',
+      brand: payload.brand || '',
+      vendor: payload.vendor || '',
+      color: payload.color || '',
+      fabric: payload.fabric || '',
+      occasion: payload.occasion || '',
+    },
+  );
 
-      category: payload.category,
-
-      productType: payload.productType,
-
-      vendor: payload.vendor,
-
-      color: payload.color,
-      fabric: payload.fabric,
-      occasion: payload.occasion,
-      style: payload.style,
-      print: payload.print,
-      badge: payload.badge,
-
-      metafields: payload.metafields,
-      similarProductIds: payload.similarProductIds,
-      relatedProductIds: payload.relatedProductIds,
-    });
-
-    return res.data;
-  },
+  return res.data;
+},
 
   updateCommerceSettings: async (id: string, payload: any) => {
     const res = await api.patch(
@@ -398,10 +367,32 @@ export const adminCatalogService = {
   },
 
   updateCollections: async (id: string, payload: any) => {
+    const selectedCategories = Array.isArray(payload.categories)
+      ? payload.categories.filter(Boolean)
+      : [];
+  
+    const primaryCategory =
+      payload.primaryCategory ||
+      payload.category ||
+      selectedCategories[0] ||
+      '';
+  
+    const finalCategories = Array.from(
+      new Set([...selectedCategories, primaryCategory].filter(Boolean)),
+    );
+  
     const res = await api.patch(
       `/admin/catalog/${encodeURIComponent(id)}/collections`,
-      payload,
+      {
+        collection: payload.collection || '',
+        category: primaryCategory,
+        primaryCategory,
+        primaryCollection: payload.primaryCollection || '',
+        secondaryCollection: payload.secondaryCollection || '',
+        categories: finalCategories,
+      },
     );
+  
     return res.data;
   },
 

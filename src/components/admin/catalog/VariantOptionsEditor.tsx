@@ -758,10 +758,11 @@ function toggleSavedVariant(variantId: string) {
 
                   <td className="px-4 py-3">
                     <div>
-  <p className="font-semibold text-gray-950">
-    {getVariantSize(variant) || '-'} /{' '}
-    {getVariantColor(variant) || '-'}
-  </p>
+                    <p className="font-semibold text-gray-950">
+  {[getVariantSize(variant), getVariantColor(variant)]
+    .filter(Boolean)
+    .join(' · ') || '-'}
+</p>
   <p className="mt-0.5 text-xs text-gray-500">
     {variant.sku || '-'}
   </p>

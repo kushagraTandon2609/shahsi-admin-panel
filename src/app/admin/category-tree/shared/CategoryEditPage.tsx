@@ -217,7 +217,13 @@ function getProductImage(product: any) {
 }
 
 function normalizeSlugValue(value: any) {
-  return String(value || '').toLowerCase().trim();
+  return String(value || '')
+    .toLowerCase()
+    .trim()
+    .replace(/&/g, 'and')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .replace(/-+/g, '-');
 }
 
 function getProductCategorySlugs(product: any) {

@@ -38,18 +38,15 @@ export default function CreateProductPage() {
             </h1>
 
             <p className="mt-1 text-sm leading-6 text-gray-500">
-              Create a new catalog item first. After creation, you will be moved
-              to the edit page where you can add media, variants, SEO,
-              collections, pricing, availability and commerce settings.
+              Create a complete catalog item from one page. You can add product
+              details, categories, media, pricing, SEO, metafields, availability
+              and commerce settings before saving the product.
             </p>
           </div>
         </div>
       </div>
 
-      <ProductEditorForm
-        mode="create"
-        onCreated={handleProductCreated}
-      />
+      <ProductEditorForm mode="create" onCreated={handleProductCreated} />
     </div>
   );
 }

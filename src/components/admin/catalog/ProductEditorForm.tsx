@@ -128,7 +128,11 @@ export function ProductEditorForm({
 
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-
+  const [uploadingMedia, setUploadingMedia] = useState(false);
+  
+  const [saveMessage, setSaveMessage] = useState('');
+  const [lastSavedCategoryIds, setLastSavedCategoryIds] = useState<string[]>([]);
+const [lastSavedPrimaryCategoryId, setLastSavedPrimaryCategoryId] = useState('');
 const [dragActive, setDragActive] = useState(false);
 const [selectedMedia, setSelectedMedia] = useState<SelectedMedia[]>([]);
 const [selectedMediaDragIndex, setSelectedMediaDragIndex] = useState<number | null>(null);
@@ -476,11 +480,11 @@ setSelectedMetafieldProducts({
   }
 
   useEffect(() => {
-  if (mode !== 'edit' || !currentProductId) return;
-
-  reloadProduct(currentProductId);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [mode, currentProductId]);
+    if (mode !== 'edit' || !currentProductId) return;
+  
+    reloadProduct(currentProductId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mode, currentProductId]);
 
 useEffect(() => {
   setMediaEdits((prev) => {
@@ -977,7 +981,7 @@ await adminCatalogService.updateProductMetafields(currentProductId, {
 });
 setError('');
 alert('Product metafields saved successfully');
- await reloadProduct(currentProductId);
+await reloadProduct(currentProductId);
  await hydrateSavedMetafieldProducts({
   similarStyleProduct: similarStyleProductIds,
   similarColorProducts: similarColorProductIds,
@@ -1243,33 +1247,41 @@ function getAssignmentCategoryIds() {
   return Array.from(new Set(selectedCategoryIds.filter(Boolean)));
 }
 
-function getAssignmentCategorySlugs() {
-  const slugs = getAssignmentCategoryIds()
+function getAssignmentCategorySlugs(sourceIds: string[] = selectedCategoryIds) {
+  const slugs = Array.from(new Set(sourceIds.filter(Boolean)))
     .map((categoryId) => {
       const category =
         findCategoryById(categoryTree, categoryId) ||
         findCategoryByAnyValue(categoryTree, categoryId);
 
-      return category ? getCategorySlug(category) : '';
+      const resolvedSlug = category ? getCategorySlug(category) : '';
+
+      // If selected value is already a slug, keep it as fallback.
+      const fallbackSlug = makeSlug(categoryId);
+
+      return category ? getCategoryNameFromItem(category) : categoryId;
     })
     .filter(Boolean);
 
   return Array.from(new Set(slugs));
 }
 
-function getPrimaryAssignmentCategorySlug() {
-  const assignmentIds = getAssignmentCategoryIds();
+function getPrimaryAssignmentCategorySlug(
+  sourceIds: string[] = selectedCategoryIds,
+  sourcePrimaryId: string = primaryCategoryId,
+) {
+  const assignmentIds = Array.from(new Set(sourceIds.filter(Boolean)));
 
   const primaryId =
-    primaryCategoryId && assignmentIds.includes(primaryCategoryId)
-      ? primaryCategoryId
+    sourcePrimaryId && assignmentIds.includes(sourcePrimaryId)
+      ? sourcePrimaryId
       : assignmentIds[0] || '';
 
   const primary =
     findCategoryById(categoryTree, primaryId) ||
     findCategoryByAnyValue(categoryTree, primaryId);
 
-  return primary ? getCategorySlug(primary) : '';
+    return primary ? getCategoryNameFromItem(primary) : primaryId;
 }
 
 function normalizeSavedCategoryIdsFromProduct(productData: any) {
@@ -1311,12 +1323,15 @@ function normalizeSavedCategoryIdsFromProduct(productData: any) {
   return Array.from(new Set(matchedIds));
 }
 
-function getSelectedCategorySlugs() {
-  return getAssignmentCategorySlugs();
+function getSelectedCategorySlugs(sourceIds: string[] = selectedCategoryIds) {
+  return getAssignmentCategorySlugs(sourceIds);
 }
 
-function getPrimaryCategorySlug() {
-  return getPrimaryAssignmentCategorySlug();
+function getPrimaryCategorySlug(
+  sourceIds: string[] = selectedCategoryIds,
+  sourcePrimaryId: string = primaryCategoryId,
+) {
+  return getPrimaryAssignmentCategorySlug(sourceIds, sourcePrimaryId);
 }
 
 function handleCategorySelectionChange(nextIds: string[]) {
@@ -1477,10 +1492,30 @@ useEffect(() => {
 
   const savedIds = normalizeSavedCategoryIdsFromProduct(sourceProduct);
 
+  // If backend returns only one category after we just saved multiple,
+  // keep the local saved multi-selection visible instead of overwriting UI.
+  if (
+    lastSavedCategoryIds.length > 1 &&
+    savedIds.length <= 1 &&
+    currentProductId
+  ) {
+    setSelectedCategoryIds(lastSavedCategoryIds);
+    setPrimaryCategoryId(
+      lastSavedPrimaryCategoryId || lastSavedCategoryIds[0] || '',
+    );
+    return;
+  }
+
   setSelectedCategoryIds(savedIds);
   setPrimaryCategoryId(getSavedPrimaryCategoryIdFromProduct(sourceProduct, savedIds));
   // eslint-disable-next-line react-hooks/exhaustive-deps
-}, [categoryTree, product?.id, initialProduct?.id]);
+}, [
+  categoryTree,
+  product?.id,
+  initialProduct?.id,
+  lastSavedCategoryIds.length,
+  lastSavedPrimaryCategoryId,
+]);
 
 
 async function saveMediaMetadata(item: any, index: number) {
@@ -1990,49 +2025,184 @@ async function hydrateSavedMetafieldProducts(
     applyHydratedMetafieldProducts(idsByField, new Map());
   }
 }
-  async function createProduct(e?: FormEvent) {
+async function createProduct(e?: FormEvent) {
   e?.preventDefault();
+
+  if (!basicForm.title.trim()) {
+    setError('Product title is required.');
+    return;
+  }
+
   setSaving(true);
-  setError('');
+setError('');
+setSaveMessage('');
 
   try {
     const cleanUrlHandle = makeSeoUrlHandle(
       seoForm.urlHandle || basicForm.slug || basicForm.title,
     );
+    const selectedCategoryIdsSnapshot = [...selectedCategoryIds];
+const primaryCategoryIdSnapshot =
+  primaryCategoryId && selectedCategoryIdsSnapshot.includes(primaryCategoryId)
+    ? primaryCategoryId
+    : selectedCategoryIdsSnapshot[0] || '';
 
-    const categorySlugs = getSelectedCategorySlugs();
-const primarySlug = getPrimaryCategorySlug();
-const selectedPrimarySlug = primarySlug || categorySlugs[0] || organizationForm.category || '';
+const categorySlugs = getSelectedCategorySlugs(selectedCategoryIdsSnapshot);
+const primarySlug = getPrimaryCategorySlug(
+  selectedCategoryIdsSnapshot,
+  primaryCategoryIdSnapshot,
+);
+    const selectedPrimarySlug =
+      primarySlug || categorySlugs[0] || organizationForm.category || '';
 
-const payload = {
-  title: basicForm.title,
-  description: basicForm.description,
-  shortDescription: stripHtml(basicForm.description).slice(0, 180),
-  slug: cleanUrlHandle,
-  sku: basicForm.sku,
-  mode: 'retail',
-  category: selectedPrimarySlug,
-  primaryCategory: selectedPrimarySlug,
-  productType: organizationForm.productType || '',
-  vendor: organizationForm.vendor || '',
-  color: '',
-  fabric: String(productMetafields.fabric || ''),
-  occasion: '',
-  composition: '',
-  style: String(productMetafields.style || ''),
-  print: String(productMetafields.print || ''),
-  badge: String(productMetafields.customBadge || ''),
-  primaryCollection: '',
-  secondaryCollection: '',
-  categories: categorySlugs,
-  tags: organizationForm.tags
-    .split(',')
-    .map((item: string) => item.trim())
-    .filter(Boolean),
-  careInstructions: Array.isArray(productMetafields.careInstructions)
-    ? productMetafields.careInstructions
-    : [],
-};
+    const tags = organizationForm.tags
+      .split(',')
+      .map((item: string) => item.trim())
+      .filter(Boolean);
+
+      const payload = {
+        title: basicForm.title.trim(),
+        description: basicForm.description || '',
+        shortDescription: stripHtml(basicForm.description || '').slice(0, 180),
+        slug: cleanUrlHandle,
+        sku: basicForm.sku || '',
+        mode: 'retail',
+      
+        productType: organizationForm.productType || '',
+        category: selectedPrimarySlug,
+        brand: '',
+        vendor: organizationForm.vendor || '',
+        color: '',
+        fabric: String(productMetafields.fabric || ''),
+        occasion: '',
+        composition: '',
+        style: String(productMetafields.style || ''),
+        print: String(productMetafields.print || ''),
+        badge: String(productMetafields.customBadge || ''),
+      
+        primaryCollection: '',
+        secondaryCollection: '',
+        categories: categorySlugs,
+        tags,
+        careInstructions: Array.isArray(productMetafields.careInstructions)
+          ? productMetafields.careInstructions
+          : String(productMetafields.careInstructions || '')
+              .split(',')
+              .map((item) => item.trim())
+              .filter(Boolean),
+      
+        highlights: [],
+        serviceHighlights: {},
+        materialDetails: '',
+        fitDetails: '',
+        modelInfo: '',
+        warrantyText: '',
+        authenticityText: '',
+      
+        basePrice: Number(pricingForm.price || 0),
+        compareAtPrice: Number(pricingForm.compareAtPrice || 0),
+        discountPercent: 0,
+        currency: 'USD',
+      
+        productionType: 'READY_STOCK',
+        isMadeToOrder: false,
+        allowCustomSizing: true,
+        allowRushProduction: false,
+        standardLeadTimeDays: 21,
+        rushLeadTimeDays: 0,
+        rushFee: 0,
+        customSizingFinalSale: false,
+      
+        availabilityStatus:
+          availabilityForm.isAvailable === 'false' ? 'out_of_stock' : 'in_stock',
+        availabilityLabel:
+          availabilityForm.isAvailable === 'false' ? 'Out of stock' : 'In stock',
+        lowStockThreshold: Number(availabilityForm.stock || 3),
+      
+        pickupAvailable: false,
+        shippingAvailable: true,
+        pickupReadyIn: '',
+        returnWindowDays: 14,
+        returnText: '',
+        isFinalSale: false,
+      
+        storeName: '',
+        storeLocation: '',
+        storeAddress: '',
+        storePickupAvailable: false,
+      
+        tabDescription: '',
+        tabCompositionCare: '',
+        tabShippingReturns: '',
+        tabReturnPolicies: '',
+      
+        reviewsAverage: 0,
+        reviewsTotal: 0,
+        review5Count: 0,
+        review4Count: 0,
+        review3Count: 0,
+        review2Count: 0,
+        review1Count: 0,
+      
+        sizeGuideUnit: 'inches',
+        paymentMethods: [],
+      
+        seoTitle: seoForm.metaTitle || basicForm.title.trim(),
+        seoDescription:
+          seoForm.metaDescription ||
+          stripHtml(basicForm.description || '').slice(0, 160),
+        metaKeywords: [],
+      
+        printSwatch: String(productMetafields.printSwatch || ''),
+      
+        availableForSubscription: false,
+        availableForDailyRent: commerceForm.isRentalEnabled === 'true',
+        rentalCondition: '',
+        cleaningBufferDays: 2,
+        sellerId: '',
+        eventType: '',
+        sizeLabel: '',
+        rentalPrice: Number(pricingForm.rentalPrice || 0),
+        resalePrice: 0,
+      
+        isRentable: commerceForm.isRentalEnabled === 'true',
+        isSellable: commerceForm.isShopEnabled === 'true',
+      
+        city: '',
+        state: '',
+        zipCode: '',
+        latitude: 0,
+        longitude: 0,
+      
+        listingType: 'RESALE',
+        originalPrice: 0,
+        listingPrice: Number(pricingForm.price || 0),
+        allowOffers: true,
+        minOfferPrice: 0,
+        occasionTags: [],
+        resaleColors: [],
+        conditionPhotoUrls: [],
+        likeCount: 0,
+      
+        images: [],
+        variants: [],
+        colors: [],
+        reviews: [],
+        sizeGuides: [],
+        relatedProducts: [],
+      };
+
+    await logToTerminal(
+      'CREATE_PRODUCT_REQUEST',
+      {
+        payload,
+        selectedMediaCount: selectedMedia.length,
+        url: '/catalog',
+      },
+      200,
+      'Create product request started',
+    );
+
     const res = await adminCatalogService.create(payload);
     const created = unwrapObject(res);
 
@@ -2045,23 +2215,261 @@ const payload = {
     const id =
       createdProduct?.id ||
       createdProduct?._id ||
-      createdProduct?.productId;
+      createdProduct?.productId ||
+      created?.id ||
+      created?._id ||
+      created?.productId;
+
+    if (!id) {
+      throw new Error('Product created but product ID was not returned.');
+    }
+
+    setProduct(createdProduct || created);
+    if (categorySlugs.length > 0 || selectedPrimarySlug) {
+      await adminCatalogService.updateCollections(id, {
+        collection: '',
+        category: selectedPrimarySlug || categorySlugs[0] || '',
+        primaryCategory: selectedPrimarySlug || categorySlugs[0] || '',
+        primaryCollection: '',
+        secondaryCollection: '',
+        categories: categorySlugs,
+      });
+      setLastSavedCategoryIds(selectedCategoryIdsSnapshot);
+setLastSavedPrimaryCategoryId(primaryCategoryIdSnapshot);
+setSelectedCategoryIds(selectedCategoryIdsSnapshot);
+setPrimaryCategoryId(primaryCategoryIdSnapshot);
+    }
+    await logToTerminal(
+      'CREATE_PRODUCT_SUCCESS',
+      {
+        productId: id,
+        response: created,
+        url: '/catalog',
+      },
+      200,
+      'Create product API success',
+    );
+
+    if (selectedMedia.length > 0) {
+      await uploadSelectedMedia(id);
+    }
+
+    const metafieldPayload = {
+      productFaqs: String(productMetafields.productFaqs || ''),
+      careInstructions: String(productMetafields.careInstructions || ''),
+      compositionOrigin: String(productMetafields.compositionOrigin || ''),
+      customBadge: String(productMetafields.customBadge || ''),
+      seeMoreFrom: String(productMetafields.seeMoreFrom || ''),
+      primaryCollection: String(productMetafields.primaryCollection || ''),
+      secondaryCollection: String(productMetafields.secondaryCollection || ''),
+      similarColorProducts: Array.isArray(productMetafields.similarColorProducts)
+        ? productMetafields.similarColorProducts
+        : [],
+      matchWithAccessories: Array.isArray(productMetafields.matchWithAccessories)
+        ? productMetafields.matchWithAccessories
+        : [],
+      completeTheLook: Array.isArray(productMetafields.completeTheLook)
+        ? productMetafields.completeTheLook
+        : [],
+      advancedProductTitle: String(productMetafields.advancedProductTitle || ''),
+      similarStyleProduct: Array.isArray(productMetafields.similarStyleProduct)
+        ? productMetafields.similarStyleProduct
+        : [],
+      style: String(productMetafields.style || ''),
+      fabric: String(productMetafields.fabric || ''),
+      print: String(productMetafields.print || ''),
+      printSwatch: String(productMetafields.printSwatch || ''),
+      similarPrintTitle: String(productMetafields.similarPrintTitle || ''),
+      similarPrintProducts: Array.isArray(productMetafields.similarPrintProducts)
+        ? productMetafields.similarPrintProducts
+        : [],
+    };
+
+    await adminCatalogService.updateProductMetafields(id, metafieldPayload);
 
     if (onCreated) {
       onCreated(createdProduct || created);
       return;
     }
 
-    if (id) {
-      router.push(`/admin/catalog/${id}`);
-    } else {
-      router.push('/admin/catalog');
-    }
+    router.push(`/admin/catalog/${id}`);
   } catch (err: any) {
+    const message = getApiErrorMessage(err);
+
+    await logToTerminal(
+      'CREATE_PRODUCT_ERROR',
+      {
+        errorMessage: message,
+        response: err?.response?.data || err?.message || err,
+        url: '/catalog',
+      },
+      err?.response?.status || 500,
+      message,
+    );
+
+    setError(message);
   } finally {
     setSaving(false);
   }
 }
+
+async function saveAllChanges(e?: FormEvent) {
+  e?.preventDefault();
+
+  if (!currentProductId) {
+    setError('Product ID missing. Please create the product first.');
+    return;
+  }
+
+  setSaving(true);
+  setError('');
+  setSaveMessage('');
+
+  const selectedIdsSnapshot = [...selectedCategoryIds];
+  const primaryIdSnapshot =
+    primaryCategoryId && selectedIdsSnapshot.includes(primaryCategoryId)
+      ? primaryCategoryId
+      : selectedIdsSnapshot[0] || '';
+
+  try {
+    const cleanUrlHandle = makeSeoUrlHandle(
+      seoForm.urlHandle || basicForm.slug || basicForm.title,
+    );
+
+    const categorySlugs = getSelectedCategorySlugs(selectedIdsSnapshot);
+const primarySlug = getPrimaryCategorySlug(selectedIdsSnapshot, primaryIdSnapshot);
+const selectedPrimarySlug = primarySlug || categorySlugs[0] || '';
+
+    const tags = organizationForm.tags
+      .split(',')
+      .map((item: string) => item.trim())
+      .filter(Boolean);
+
+    await adminCatalogService.updateBasicInfo(currentProductId, {
+      title: basicForm.title,
+      description: basicForm.description,
+      shortDescription: stripHtml(basicForm.description).slice(0, 180),
+      category: selectedPrimarySlug || organizationForm.category || '',
+      productType: organizationForm.productType || '',
+      vendor: organizationForm.vendor || '',
+      color: '',
+      fabric: String(productMetafields.fabric || ''),
+      occasion: '',
+    });
+
+    await adminCatalogService.updatePricing(currentProductId, {
+      basePrice: Number(pricingForm.price || 0),
+      compareAtPrice: Number(pricingForm.compareAtPrice || 0),
+      discountPercent: 0,
+      currency: 'USD',
+      rentalPrice: Number(pricingForm.rentalPrice || 0),
+      resalePrice: 0,
+      listingPrice: Number(pricingForm.price || 0),
+      minOfferPrice: 0,
+    });
+
+    await adminCatalogService.updateStatus(currentProductId, {
+      status: normalizeStatus(availabilityForm.status),
+      publishedAt:
+        normalizeStatus(availabilityForm.status) === 'ACTIVE'
+          ? new Date().toISOString()
+          : null,
+    });
+
+    await adminCatalogService.updateAvailability(currentProductId, {
+      availabilityStatus:
+        availabilityForm.isAvailable === 'false' ? 'out_of_stock' : 'in_stock',
+      availabilityLabel:
+        availabilityForm.isAvailable === 'false' ? 'Out of stock' : 'In stock',
+      lowStockThreshold: Number(availabilityForm.stock || 3),
+      pickupAvailable: true,
+      shippingAvailable: true,
+    });
+
+    await adminCatalogService.updateTags(currentProductId, {
+      tags,
+      occasionTags: [],
+      metaKeywords: [],
+    });
+
+    await adminCatalogService.updateCollections(currentProductId, {
+      collection: '',
+      category: selectedPrimarySlug,
+      primaryCategory: selectedPrimarySlug,
+      primaryCollection: '',
+      secondaryCollection: '',
+      categories: categorySlugs,
+    });
+    setLastSavedCategoryIds(selectedIdsSnapshot);
+    setLastSavedPrimaryCategoryId(primaryIdSnapshot);
+    await adminCatalogService.updateSeo(currentProductId, {
+      seoTitle: seoForm.metaTitle,
+      seoDescription: seoForm.metaDescription,
+      slug: cleanUrlHandle,
+      metaKeywords: [],
+    });
+
+    await adminCatalogService.updateCommerceSettings(currentProductId, {
+      isSellable: commerceForm.isShopEnabled === 'true',
+      isRentable: commerceForm.isRentalEnabled === 'true',
+      availableForDailyRent: commerceForm.isRentalEnabled === 'true',
+      availableForSubscription: false,
+      isMadeToOrder: false,
+      allowCustomSizing: true,
+      allowRushProduction: false,
+    });
+
+    await adminCatalogService.updateProductMetafields(currentProductId, {
+      productFaqs: String(productMetafields.productFaqs || ''),
+      careInstructions: String(productMetafields.careInstructions || ''),
+      compositionOrigin: String(productMetafields.compositionOrigin || ''),
+      customBadge: String(productMetafields.customBadge || ''),
+      seeMoreFrom: String(productMetafields.seeMoreFrom || ''),
+      primaryCollection: String(productMetafields.primaryCollection || ''),
+      secondaryCollection: String(productMetafields.secondaryCollection || ''),
+      similarColorProducts: Array.isArray(productMetafields.similarColorProducts)
+        ? productMetafields.similarColorProducts
+        : [],
+      matchWithAccessories: Array.isArray(productMetafields.matchWithAccessories)
+        ? productMetafields.matchWithAccessories
+        : [],
+      completeTheLook: Array.isArray(productMetafields.completeTheLook)
+        ? productMetafields.completeTheLook
+        : [],
+      advancedProductTitle: String(productMetafields.advancedProductTitle || ''),
+      similarStyleProduct: Array.isArray(productMetafields.similarStyleProduct)
+        ? productMetafields.similarStyleProduct
+        : [],
+      style: String(productMetafields.style || ''),
+      fabric: String(productMetafields.fabric || ''),
+      print: String(productMetafields.print || ''),
+      printSwatch: String(productMetafields.printSwatch || ''),
+      similarPrintTitle: String(productMetafields.similarPrintTitle || ''),
+      similarPrintProducts: Array.isArray(productMetafields.similarPrintProducts)
+        ? productMetafields.similarPrintProducts
+        : [],
+    });
+
+    if (selectedMedia.length > 0) {
+      await uploadSelectedMedia(currentProductId);
+    }
+
+    await reloadProduct(currentProductId);
+
+setSelectedCategoryIds(selectedIdsSnapshot);
+setPrimaryCategoryId(primaryIdSnapshot);
+setLastSavedCategoryIds(selectedIdsSnapshot);
+setLastSavedPrimaryCategoryId(primaryIdSnapshot);
+
+    setSaveMessage('Product changes saved successfully.');
+    await onReload?.();
+  } catch (err: any) {
+    setError(getApiErrorMessage(err));
+  } finally {
+    setSaving(false);
+  }
+}
+
 async function saveBasic(e?: FormEvent) {
   e?.preventDefault();
 
@@ -2089,7 +2497,7 @@ async function saveBasic(e?: FormEvent) {
   fabric: String(productMetafields.fabric || ''),
   occasion: '',
 });
-    await reloadProduct(currentProductId);
+await reloadProduct(currentProductId);
     await onReload?.();
   } catch (err: any) {
     setError(getApiErrorMessage(err));
@@ -2121,7 +2529,7 @@ async function saveBasic(e?: FormEvent) {
   minOfferPrice: 0,
 });
 
-    await reloadProduct(currentProductId);
+await reloadProduct(currentProductId);
     await onReload?.();
   } catch (err: any) {
     setError(getApiErrorMessage(err));
@@ -2244,7 +2652,7 @@ const primaryIdSnapshot = primaryCategoryId;
   }),
 ]);
 
-    await reloadProduct(currentProductId);
+await reloadProduct(currentProductId);
     setSelectedCategoryIds(selectedIdsSnapshot);
 setPrimaryCategoryId(primaryIdSnapshot);
     await onReload?.();
@@ -2289,9 +2697,7 @@ await adminCatalogService.updateCollections(currentProductId, {
     setSelectedCategoryIds(selectedIdsSnapshot);
     setPrimaryCategoryId(primaryIdSnapshot);
 
-    await reloadProduct(currentProductId);
-
-    setSelectedCategoryIds(selectedIdsSnapshot);
+    await reloadProduct(currentProductId);    setSelectedCategoryIds(selectedIdsSnapshot);
     setPrimaryCategoryId(primaryIdSnapshot);
 
     await onReload?.();
@@ -2336,7 +2742,7 @@ await adminCatalogService.updateCollections(currentProductId, {
     }));
 
     await reloadProduct(currentProductId);
-    await onReload?.();
+        await onReload?.();
   } catch (err: any) {
     setError(getApiErrorMessage(err));
   } finally {
@@ -2366,8 +2772,7 @@ await adminCatalogService.updateCollections(currentProductId, {
       allowRushProduction: false,
     });
 
-    await reloadProduct(currentProductId);
-    await onReload?.();
+    await reloadProduct(currentProductId);    await onReload?.();
   } catch (err: any) {
     setError(getApiErrorMessage(err));
   } finally {
@@ -2487,10 +2892,11 @@ function clearSelectedMedia() {
   setSelectedMedia([]);
 }
 
-async function uploadSelectedMedia() {
+async function uploadSelectedMedia(targetProductId = currentProductId) {
   await logToTerminal(
     'UPLOAD_MEDIA_CLICK',
     {
+      targetProductId,
       selectedMediaCount: selectedMedia.length,
       selectedFiles: selectedMedia.map((item) => ({
         name: item.file.name,
@@ -2500,36 +2906,15 @@ async function uploadSelectedMedia() {
       })),
     },
     200,
-    'Upload media done button clicked',
+    'Upload media started',
   );
 
-  if (!currentProductId) {
+  if (!targetProductId) {
     setError('Create the product first, then upload media.');
-
-    await logToTerminal(
-      'UPLOAD_MEDIA_FAILED',
-      {
-        reason: 'Product ID missing',
-      },
-      400,
-      'Product ID missing',
-    );
-
     return;
   }
 
   if (selectedMedia.length === 0) {
-    setError('Select at least 1 media file to upload.');
-
-    await logToTerminal(
-      'UPLOAD_MEDIA_FAILED',
-      {
-        reason: 'No media selected',
-      },
-      400,
-      'No media selected',
-    );
-
     return;
   }
 
@@ -2537,20 +2922,10 @@ async function uploadSelectedMedia() {
 
   if (validMedia.length === 0) {
     setError('Selected media files are invalid. Please select files again.');
-
-    await logToTerminal(
-      'UPLOAD_MEDIA_FAILED',
-      {
-        reason: 'Selected media files invalid',
-      },
-      400,
-      'Selected media files invalid',
-    );
-
     return;
   }
 
-  setSaving(true);
+  setUploadingMedia(true);
   setError('');
 
   try {
@@ -2562,52 +2937,20 @@ async function uploadSelectedMedia() {
       item.file.type.startsWith('video/'),
     );
 
-    await logToTerminal(
-      'UPLOAD_MEDIA_REQUEST',
-      {
-        imageCount: imageItems.length,
-        videoCount: videoItems.length,
-        imageFiles: imageItems.map((item) => item.file.name),
-        videoFiles: videoItems.map((item) => item.file.name),
-      },
-      200,
-      'Upload media API request started',
-    );
-
     let imageUploadResponse: any = null;
     let videoUploadResponse: any = null;
 
     if (imageItems.length > 0) {
       imageUploadResponse = await adminCatalogService.uploadImages(
-        currentProductId,
+        targetProductId,
         imageItems.map((item) => item.file),
-      );
-
-      await logToTerminal(
-        'UPLOAD_IMAGES_SUCCESS',
-        {
-          response: imageUploadResponse,
-          url: `/catalog/${currentProductId}/images`,
-        },
-        200,
-        'Upload images API success 200',
       );
     }
 
     if (videoItems.length > 0) {
       videoUploadResponse = await adminCatalogService.uploadVideos(
-        currentProductId,
+        targetProductId,
         videoItems.map((item) => item.file),
-      );
-
-      await logToTerminal(
-        'UPLOAD_VIDEOS_SUCCESS',
-        {
-          response: videoUploadResponse,
-          url: `/catalog/${currentProductId}/video`,
-        },
-        200,
-        'Upload videos API success 200',
       );
     }
 
@@ -2620,29 +2963,16 @@ async function uploadSelectedMedia() {
       const imageId = getMediaId(uploaded);
 
       if (!imageId || !selected) continue;
-const payload = {
-  name: selected.name || selected.file.name,
-  altText: selected.altText || selected.name || selected.file.name,
-  caption: selected.name || selected.file.name,
-  viewType: 'front',
-  position: media.length + i,
-  colorName: '',
-  isPrimary: media.length === 0 && i === 0,
-};
 
-      const updateRes = await adminCatalogService.updateImage(imageId, payload);
-
-      await logToTerminal(
-        'UPDATE_UPLOADED_IMAGE_METADATA_SUCCESS',
-        {
-          imageId,
-          payload,
-          response: updateRes,
-          url: `/admin/catalog/images/${imageId}`,
-        },
-        200,
-        'Update uploaded image metadata API success 200',
-      );
+      await adminCatalogService.updateImage(imageId, {
+        name: selected.name || selected.file.name,
+        altText: selected.altText || selected.name || selected.file.name,
+        caption: selected.name || selected.file.name,
+        viewType: 'front',
+        position: media.length + i,
+        colorName: '',
+        isPrimary: media.length === 0 && i === 0,
+      });
     }
 
     for (let i = 0; i < uploadedVideos.length; i += 1) {
@@ -2650,62 +2980,36 @@ const payload = {
       const selected = videoItems[i];
       const videoId = getMediaId(uploaded);
 
-      if (!videoId || !selected) {
-        await logToTerminal(
-          'UPDATE_UPLOADED_VIDEO_METADATA_SKIPPED',
-          {
-            videoId,
-            uploaded,
-            selectedFile: selected?.file?.name,
-          },
-          200,
-          'Uploaded video metadata skipped',
-        );
+      if (!videoId || !selected) continue;
 
-        continue;
-      }
-
-const payload = {
-  name: selected.name || selected.file.name,
-  altText: selected.altText || selected.name || selected.file.name,
-  caption: selected.name || selected.file.name,
-  viewType: 'video',
-  position: media.length + imageItems.length + i,
-  colorName: '',
-  isPrimary: false,
-};
-
-      const updateRes = await adminCatalogService.updateImage(videoId, payload);
-
-      await logToTerminal(
-        'UPDATE_UPLOADED_VIDEO_METADATA_SUCCESS',
-        {
-          videoId,
-          payload,
-          response: updateRes,
-          url: `/admin/catalog/images/${videoId}`,
-        },
-        200,
-        'Update uploaded video metadata API success 200',
-      );
+      await adminCatalogService.updateImage(videoId, {
+        name: selected.name || selected.file.name,
+        altText: selected.altText || selected.name || selected.file.name,
+        caption: selected.name || selected.file.name,
+        viewType: 'video',
+        position: media.length + imageItems.length + i,
+        colorName: '',
+        isPrimary: false,
+      });
     }
 
     clearSelectedMedia();
     setShowMediaPicker(false);
 
-    await reloadProduct(currentProductId);
+    await reloadProduct(targetProductId);
     await onReload?.();
 
     await logToTerminal(
       'UPLOAD_MEDIA_SUCCESS',
       {
-        uploadedImagesCount: uploadedImages.length,
-        uploadedVideosCount: uploadedVideos.length,
-        uploadedImages,
-        uploadedVideos,
+        targetProductId,
+        imageCount: imageItems.length,
+        videoCount: videoItems.length,
+        imageUploadResponse,
+        videoUploadResponse,
       },
       200,
-      'Upload media flow completed successfully',
+      'Upload media success',
     );
   } catch (err: any) {
     const message = getApiErrorMessage(err);
@@ -2713,6 +3017,7 @@ const payload = {
     await logToTerminal(
       'UPLOAD_MEDIA_ERROR',
       {
+        targetProductId,
         errorMessage: message,
         response: err?.response?.data || err?.message || err,
       },
@@ -2721,8 +3026,9 @@ const payload = {
     );
 
     setError(message);
+    throw err;
   } finally {
-    setSaving(false);
+    setUploadingMedia(false);
   }
 }
 
@@ -2800,7 +3106,7 @@ async function saveMediaOrder() {
     );
 
     await reloadProduct(currentProductId);
-    await onReload?.();
+        await onReload?.();
   } catch (err: any) {
     const message = getApiErrorMessage(err);
 
@@ -2877,8 +3183,7 @@ async function deleteImage(imageId: string) {
     );
 
     if (currentProductId) {
-      await reloadProduct(currentProductId);
-    }
+      await reloadProduct(currentProductId);    }
 
     setActiveMediaIndex(null);
     await onReload?.();
@@ -2951,8 +3256,7 @@ async function setPrimaryImage(imageId: string) {
       'Primary image API success 200',
     );
 
-    await reloadProduct(currentProductId);
-    await onReload?.();
+    await reloadProduct(currentProductId);    await onReload?.();
   } catch (err: any) {
     const message = getApiErrorMessage(err);
 
@@ -3002,17 +3306,36 @@ async function unpublishProduct() {
   try {
     await adminCatalogService.unpublish(currentProductId);
 
-    await reloadProduct(currentProductId);
-    await onReload?.();
+    await reloadProduct(currentProductId);    await onReload?.();
   } catch (err: any) {
     setError(getApiErrorMessage(err));
   } finally {
     setSaving(false);
   }
 }
-  return (
-    <div className="mx-auto max-w-[1500px]">
-      <ApiError message={error} />
+return (
+  <div className="mx-auto max-w-[1500px]">
+    {(saving || uploadingMedia) && (
+  <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-white/70 pt-24 backdrop-blur-sm">
+    <div className="rounded-2xl border border-gray-200 bg-white px-6 py-5 text-center shadow-xl">
+      <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-black" />
+      <p className="text-sm font-semibold text-gray-950">
+        {uploadingMedia ? 'Uploading media...' : 'Saving product...'}
+      </p>
+      <p className="mt-1 text-xs text-gray-500">
+        Please wait, do not close this page.
+      </p>
+    </div>
+  </div>
+)}
+
+    <ApiError message={error} />
+
+    {saveMessage && (
+      <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
+        {saveMessage}
+      </div>
+    )}
 
       <div className="mb-6 rounded-2xl border border-gray-200 bg-white px-5 py-5 shadow-sm">
         <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -3036,28 +3359,20 @@ async function unpublishProduct() {
           </div>
 
           <div className="flex flex-wrap gap-2">
-            {mode === 'edit' && (
-              <>
-                <Button
-  variant="secondary"
-  onClick={() => unpublishProduct()}
-  disabled={saving}
->
-  Unpublish
-</Button>
-
-<Button onClick={() => publishProduct()} disabled={saving}>
-  Publish
-</Button>
-              </>
-            )}
-
-            {mode === 'create' && (
-              <Button onClick={() => createProduct()} disabled={saving}>
-                {saving ? 'Creating...' : 'Save product'}
-              </Button>
-            )}
-          </div>
+  <Button
+    type="button"
+    onClick={mode === 'create' ? createProduct : saveAllChanges}
+    disabled={saving || uploadingMedia}
+  >
+    {saving || uploadingMedia
+      ? mode === 'create'
+        ? 'Saving product...'
+        : 'Saving changes...'
+      : mode === 'create'
+        ? 'Save product'
+        : 'Save changes'}
+  </Button>
+</div>
         </div>
       </div>
 
@@ -3073,8 +3388,7 @@ async function unpublishProduct() {
 
             <div className="px-5 py-5">
               <form
-                onSubmit={mode === 'create' ? createProduct : saveBasic}
-                className="space-y-4"
+onSubmit={(e) => e.preventDefault()}                className="space-y-4"
               >
                 <Input
                   label="Title"
@@ -3130,11 +3444,7 @@ async function unpublishProduct() {
                   minHeight={260}
                 />
 
-                <div className="flex justify-end">
-                  <Button type="submit" disabled={saving}>
-                    {mode === 'create' ? 'Save product' : 'Save title & description'}
-                  </Button>
-                </div>
+                
               </form>
             </div>
           </Card>
@@ -3285,18 +3595,7 @@ async function unpublishProduct() {
       )}
     </div>
 
-    {media.length > 0 && (
-      <div className="mt-4 flex justify-end">
-       <Button
-  type="button"
-  variant="secondary"
-  onClick={saveMediaOrder}
-  disabled={saving || media.length === 0}
->
-  {saving ? 'Saving...' : 'Save order'}
-</Button>
-      </div>
-    )}
+    
 
     {activeMediaIndex !== null && media[activeMediaIndex] && (
       <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -3418,7 +3717,7 @@ async function unpublishProduct() {
 
 {showMediaPicker && (
   <div className="mt-4 rounded-2xl border border-gray-200 bg-white shadow-xl">
-    <div className="max-h-[520px] w-full overflow-hidden rounded-2xl bg-white">
+  <div className="flex h-[720px] w-full flex-col overflow-hidden rounded-2xl bg-white">
       <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-200 bg-white px-5 py-4">
         <h2 className="text-base font-bold text-gray-950">Select file</h2>
 
@@ -3480,8 +3779,8 @@ async function unpublishProduct() {
         </div>
       </div>
 
-      <div className="max-h-[360px] overflow-y-auto px-5 py-5">
-        {selectedMedia.length === 0 ? (
+      <div className="min-h-0 flex-1 overflow-y-auto px-5 py-5">
+                     {selectedMedia.length === 0 ? (
           <p className="py-10 text-center text-sm text-gray-500">
             No new media selected yet.
           </p>
@@ -3591,8 +3890,7 @@ async function unpublishProduct() {
         )}
       </div>
 
-      <div className="sticky bottom-0 z-10 flex items-center justify-end gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4">
-        <Button
+      <div className="shrink-0 flex items-center justify-end gap-2 border-t border-gray-200 bg-gray-50 px-5 py-4">        <Button
           variant="secondary"
           onClick={() => {
             setShowMediaPicker(false);
@@ -3602,14 +3900,19 @@ async function unpublishProduct() {
         </Button>
 
         <Button
-          disabled={selectedMedia.length === 0}
-          onClick={async () => {
-            await uploadSelectedMedia();
-            setShowMediaPicker(false);
-          }}
-        >
-          Done
-        </Button>
+  disabled={selectedMedia.length === 0}
+  onClick={async () => {
+    if (mode === 'create') {
+      setShowMediaPicker(false);
+      return;
+    }
+
+    await uploadSelectedMedia();
+    setShowMediaPicker(false);
+  }}
+>
+  Done
+</Button>
       </div>
     </div>
   </div>
@@ -3624,13 +3927,7 @@ async function unpublishProduct() {
   onAddCategory={addCategoryFromProductEditor}
 />
 
-  {mode === 'edit' && (
-    <div className="mt-4 flex justify-end">
-      <Button type="button" onClick={saveCategories} disabled={saving}>
-        Save categories
-      </Button>
-    </div>
-  )}
+  
 </Card>
 
 
@@ -3666,8 +3963,7 @@ async function unpublishProduct() {
                 productionType: 'READY_STOCK',
               });
 
-              await reloadProduct(currentProductId);
-              await onReload?.();
+              await reloadProduct(currentProductId);              await onReload?.();
             }}
             onDeleteVariant={async (variantId) => {
               if (!currentProductId) return;
@@ -3675,8 +3971,7 @@ async function unpublishProduct() {
               if (!confirm('Delete this variant?')) return;
 
               await adminCatalogService.deleteVariant(currentProductId, variantId);
-              await reloadProduct(currentProductId);
-              await onReload?.();
+              await reloadProduct(currentProductId);              await onReload?.();
             }}
             onUpdateStock={async (variantId, stock) => {
               if (!currentProductId) return;
@@ -3839,15 +4134,7 @@ async function unpublishProduct() {
 
 
 
-<div className="mt-4 flex justify-end">
-  <Button
-    type="button"
-    onClick={saveProductMetafields}
-    disabled={saving || !currentProductId}
-  >
-    {saving ? 'Saving...' : 'Save product metafields'}
-  </Button>
-</div>
+
 
           <Card className="overflow-hidden p-0">
   <div className="border-b px-5 py-4">
@@ -3880,8 +4167,8 @@ async function unpublishProduct() {
     </div>
   </div>
 
-  <form onSubmit={saveSeo} className="border-t px-5 py-4">
-    <div className="space-y-5">
+  <form onSubmit={(e) => e.preventDefault()} className="border-t px-5 py-4">
+        <div className="space-y-5">
       <label className="block">
         <span className="mb-1 block text-sm font-medium">Page title</span>
 
@@ -3958,11 +4245,7 @@ async function unpublishProduct() {
         </div>
       </label>
 
-      {mode === 'edit' && (
-        <div className="flex justify-end">
-          <Button type="submit">Save SEO</Button>
-        </div>
-      )}
+      
     </div>
   </form>
 </Card>
@@ -3972,7 +4255,8 @@ async function unpublishProduct() {
           <Card>
             <h2 className="text-base font-bold text-gray-950">Status</h2>
 
-<form onSubmit={saveStatus} className="mt-4 space-y-4">              <label className="block">
+            <form onSubmit={(e) => e.preventDefault()} className="mt-4 space-y-4">
+                          <label className="block">
                 <span className="mb-1 block text-sm font-medium">Status</span>
                 <select
                   className="w-full rounded-lg border px-3 py-2 text-sm"
@@ -3987,11 +4271,7 @@ async function unpublishProduct() {
                 </select>
               </label>
 
-              {mode === 'edit' && (
-                <div className="flex justify-end">
-                  <Button type="submit">Save status</Button>
-                </div>
-              )}
+              
             </form>
           </Card>
 
@@ -4003,7 +4283,7 @@ async function unpublishProduct() {
           <Card>
             <h2 className="text-base font-bold text-gray-950">Product organization</h2>
 
-            <form onSubmit={saveOrganization} className="mt-4 space-y-4">
+            <form onSubmit={(e) => e.preventDefault()} className="mt-4 space-y-4">
               
               <Input
                 label="Product Type"
@@ -4053,20 +4333,14 @@ async function unpublishProduct() {
   </div>
 </label>
 
-              {mode === 'edit' && (
-                <div className="flex justify-end">
-                  <Button type="submit" disabled={saving || !currentProductId}>
-  {saving ? 'Saving...' : 'Save organization'}
-</Button>
-                </div>
-              )}
+              
             </form>
           </Card>
 
           <Card>
             <h2 className="text-base font-bold text-gray-950">Pricing</h2>
 
-            <form onSubmit={savePricing} className="mt-4 space-y-4">
+            <form onSubmit={(e) => e.preventDefault()} className="mt-4 space-y-4">
               <Input
                 label="Price"
                 value={pricingForm.price}
@@ -4097,11 +4371,7 @@ async function unpublishProduct() {
                 }
               />
 
-              {mode === 'edit' && (
-                <div className="flex justify-end">
-                  <Button type="submit">Save pricing</Button>
-                </div>
-              )}
+              
             </form>
           </Card>
 
@@ -4109,7 +4379,7 @@ async function unpublishProduct() {
           <Card>
             <h2 className="text-base font-bold text-gray-950">Commerce settings</h2>
 
-            <form onSubmit={saveCommerce} className="mt-4 space-y-4">
+            <form onSubmit={(e) => e.preventDefault()} className="mt-4 space-y-4">
               <label className="block">
                 <span className="mb-1 block text-sm font-medium">Shop enabled</span>
                 <select
@@ -4152,11 +4422,7 @@ async function unpublishProduct() {
                 </select>
               </label>
 
-              {mode === 'edit' && (
-                <div className="flex justify-end">
-                  <Button type="submit">Save commerce</Button>
-                </div>
-              )}
+              
             </form>
           </Card>
         </div>
