@@ -1297,6 +1297,52 @@ function normalizeSavedCategoryIdsFromProduct(productData: any) {
     productData?.categoryId,
   ].filter(Boolean);
 
+  const normalizeCategoryValue = (value: any) =>
+    String(value || '')
+      .toLowerCase()
+      .trim()
+      .replace(/&/g, 'and')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .replace(/-+/g, '-');
+
+  function findCategoryBySavedValue(categories: any[], value: string): any | null {
+    const normalizedValue = normalizeCategoryValue(value);
+
+    if (!normalizedValue) return null;
+
+    for (let index = 0; index < categories.length; index += 1) {
+      const category = categories[index];
+
+      const possibleValues = [
+        category?.id,
+        category?._id,
+        category?.categoryId,
+        category?.slug,
+        category?.handle,
+        category?.name,
+        category?.title,
+        category?.label,
+        index,
+      ]
+        .map(normalizeCategoryValue)
+        .filter(Boolean);
+
+      if (possibleValues.includes(normalizedValue)) {
+        return category;
+      }
+
+      const found = findCategoryBySavedValue(
+        getCategoryChildrenFromItem(category),
+        value,
+      );
+
+      if (found) return found;
+    }
+
+    return null;
+  }
+
   const matchedIds = rawValues
     .map((item: any) => {
       const rawValue =
@@ -1312,9 +1358,7 @@ function normalizeSavedCategoryIdsFromProduct(productData: any) {
             item?.label ||
             '';
 
-      const category =
-        findCategoryByAnyValue(categoryTree, rawValue) ||
-        findCategoryById(categoryTree, rawValue);
+      const category = findCategoryBySavedValue(categoryTree, rawValue);
 
       return category ? getCategorySelectionId(category) : '';
     })
@@ -1512,7 +1556,13 @@ useEffect(() => {
 }, [
   categoryTree,
   product?.id,
+  product?.categories,
+  product?.category,
+  product?.primaryCategory,
   initialProduct?.id,
+  initialProduct?.categories,
+  initialProduct?.category,
+  initialProduct?.primaryCategory,
   lastSavedCategoryIds.length,
   lastSavedPrimaryCategoryId,
 ]);
@@ -2252,6 +2302,7 @@ setPrimaryCategoryId(primaryCategoryIdSnapshot);
 
     if (selectedMedia.length > 0) {
       await uploadSelectedMedia(id);
+      await reloadProduct(id);
     }
 
     const metafieldPayload = {
@@ -2453,7 +2504,11 @@ const selectedPrimarySlug = primarySlug || categorySlugs[0] || '';
     if (selectedMedia.length > 0) {
       await uploadSelectedMedia(currentProductId);
     }
-
+    
+    if (media.length > 1) {
+      await saveMediaOrder(false);
+    }
+    
     await reloadProduct(currentProductId);
 
 setSelectedCategoryIds(selectedIdsSnapshot);
@@ -2940,18 +2995,31 @@ async function uploadSelectedMedia(targetProductId = currentProductId) {
     let imageUploadResponse: any = null;
     let videoUploadResponse: any = null;
 
-    if (imageItems.length > 0) {
-      imageUploadResponse = await adminCatalogService.uploadImages(
-        targetProductId,
-        imageItems.map((item) => item.file),
-      );
+    const [imageResult, videoResult] = await Promise.allSettled([
+      imageItems.length > 0
+        ? adminCatalogService.uploadImages(
+            targetProductId,
+            imageItems.map((item) => item.file),
+          )
+        : Promise.resolve(null),
+      videoItems.length > 0
+        ? adminCatalogService.uploadVideos(
+            targetProductId,
+            videoItems.map((item) => item.file),
+          )
+        : Promise.resolve(null),
+    ]);
+    
+    if (imageResult.status === 'fulfilled') {
+      imageUploadResponse = imageResult.value;
+    } else {
+      throw imageResult.reason;
     }
-
-    if (videoItems.length > 0) {
-      videoUploadResponse = await adminCatalogService.uploadVideos(
-        targetProductId,
-        videoItems.map((item) => item.file),
-      );
+    
+    if (videoResult.status === 'fulfilled') {
+      videoUploadResponse = videoResult.value;
+    } else {
+      throw videoResult.reason;
     }
 
     const uploadedImages = normalizeMediaList(imageUploadResponse);
@@ -3026,13 +3094,13 @@ async function uploadSelectedMedia(targetProductId = currentProductId) {
     );
 
     setError(message);
-    throw err;
+return;
   } finally {
     setUploadingMedia(false);
   }
 }
 
-async function saveMediaOrder() {
+async function saveMediaOrder(showOwnLoader = true) {
   const imageIds = media
     .map((item) => getMediaId(item))
     .map((id) => String(id || '').trim())
@@ -3056,36 +3124,17 @@ async function saveMediaOrder() {
 
   if (!currentProductId) {
     setError('Product ID missing, order save nahi ho sakta.');
-
-    await logToTerminal(
-      'SAVE_MEDIA_ORDER_FAILED',
-      {
-        reason: 'Product ID missing',
-      },
-      400,
-      'Product ID missing',
-    );
-
     return;
   }
 
-  if (imageIds.length === 0) {
-    setError('Reorder save karne ke liye imageIds nahi mil rahi.');
-
-    await logToTerminal(
-      'SAVE_MEDIA_ORDER_FAILED',
-      {
-        reason: 'Image IDs empty',
-        media,
-      },
-      400,
-      'Image IDs empty',
-    );
-
+  if (imageIds.length <= 1) {
     return;
   }
 
-  setSaving(true);
+  if (showOwnLoader) {
+    setSaving(true);
+  }
+
   setError('');
 
   try {
@@ -3105,8 +3154,10 @@ async function saveMediaOrder() {
       'Save media order API success 200',
     );
 
-    await reloadProduct(currentProductId);
-        await onReload?.();
+    if (showOwnLoader) {
+      await reloadProduct(currentProductId);
+      await onReload?.();
+    }
   } catch (err: any) {
     const message = getApiErrorMessage(err);
 
@@ -3124,11 +3175,12 @@ async function saveMediaOrder() {
 
     setError(message);
   } finally {
-    setSaving(false);
+    if (showOwnLoader) {
+      setSaving(false);
+    }
   }
 }
-
-async function deleteImage(imageId: string) {
+async function deleteImage(imageId: string, askConfirm = false) {
   await logToTerminal(
     'DELETE_IMAGE_CLICK',
     {
@@ -3152,14 +3204,14 @@ async function deleteImage(imageId: string) {
     return;
   }
 
-  if (!confirm('Delete this image?')) {
+  if (askConfirm && !confirm('Delete this media?')) {
     await logToTerminal(
       'DELETE_IMAGE_CANCELLED',
       {
         imageId,
       },
       200,
-      'Delete image cancelled by user',
+      'Delete media cancelled by user',
     );
 
     return;
@@ -3182,10 +3234,13 @@ async function deleteImage(imageId: string) {
       'Delete image API success 200',
     );
 
-    if (currentProductId) {
-      await reloadProduct(currentProductId);    }
-
+    setMedia((prev) => prev.filter((item) => getMediaId(item) !== imageId));
     setActiveMediaIndex(null);
+
+    if (currentProductId) {
+      await reloadProduct(currentProductId);
+    }
+
     await onReload?.();
   } catch (err: any) {
     const message = getApiErrorMessage(err);
@@ -3484,12 +3539,10 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
         }
       }}
       className={`rounded-2xl border border-dashed p-4 transition ${
-        dragActive
-          ? 'border-black bg-gray-50'
-          : 'border-gray-300 bg-white'
+        dragActive ? 'border-black bg-gray-50' : 'border-gray-300 bg-white'
       }`}
     >
-      {media.length === 0 ? (
+      {media.length === 0 && selectedMedia.length === 0 ? (
         <div className="flex min-h-36 flex-col items-center justify-center gap-3 text-center">
           <div className="flex flex-wrap items-center justify-center gap-3">
             <label
@@ -3514,11 +3567,79 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
         </div>
       ) : (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+          {selectedMedia.map((item, index) => (
+            <div
+              key={`${item.file.name}-${item.file.lastModified}-${index}`}
+              draggable
+              onDragStart={(e) => {
+                setSelectedMediaDragIndex(index);
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', String(index));
+              }}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.currentTarget.style.opacity = '0.5';
+                e.currentTarget.style.borderColor = 'black';
+              }}
+              onDragLeave={(e) => {
+                e.currentTarget.style.opacity = '1';
+                e.currentTarget.style.borderColor = '';
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.currentTarget.style.opacity = '1';
+                e.currentTarget.style.borderColor = '';
+
+                const fromIndex = Number(e.dataTransfer.getData('text/plain'));
+
+                if (!Number.isNaN(fromIndex)) {
+                  handleSelectedMediaDrop(fromIndex, index);
+                }
+              }}
+              className="group relative cursor-move overflow-hidden rounded-xl border border-gray-200 bg-white p-1 transition hover:border-black"
+            >
+              {item.file.type.startsWith('video/') ? (
+                <video
+                  src={item.previewUrl}
+                  className="h-28 w-full rounded-lg object-cover"
+                />
+              ) : (
+                <img
+                  src={item.previewUrl}
+                  alt={item.altText || item.name}
+                  className="h-28 w-full rounded-lg object-cover"
+                />
+              )}
+
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeSelectedMedia(index);
+                }}
+                className="absolute right-2 top-2 z-10 rounded-full bg-black/70 px-2 py-0.5 text-xs text-white opacity-100 transition hover:bg-red-600"
+              >
+                ×
+              </button>
+
+              <span className="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white">
+                New {index + 1}
+              </span>
+
+              {item.file.type.startsWith('video/') && (
+                <span className="absolute inset-0 flex items-center justify-center text-white">
+                  ▶
+                </span>
+              )}
+            </div>
+          ))}
+
           {media.map((item, index) => {
             const mediaId = getMediaId(item);
             const mediaUrl = getMediaUrl(item);
             const isVideo = isVideoMedia(item);
             const active = activeMediaIndex === index;
+            const displayIndex = selectedMedia.length + index + 1;
 
             return (
               <button
@@ -3543,14 +3664,15 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                 }}
                 onClick={() => setActiveMediaIndex(index)}
                 className={`group relative cursor-move overflow-hidden rounded-xl border bg-white p-1 transition hover:border-black ${
-                  active ? 'border-black ring-2 ring-black/10' : 'border-gray-200'
+                  active
+                    ? 'border-black ring-2 ring-black/10'
+                    : 'border-gray-200'
                 }`}
               >
                 {mediaUrl ? (
                   isVideo ? (
                     <video
                       src={mediaUrl}
-                      
                       className="h-28 w-full rounded-lg object-cover"
                     />
                   ) : (
@@ -3577,25 +3699,43 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                   </span>
                 )}
 
+                {mediaId && (
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteImage(mediaId, false);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.stopPropagation();
+                        deleteImage(mediaId, false);
+                      }
+                    }}
+                    className="absolute right-2 top-2 z-10 rounded-full bg-black/70 px-2 py-0.5 text-xs text-white opacity-100 transition hover:bg-red-600"
+                  >
+                    ×
+                  </span>
+                )}
+
                 <span className="absolute left-2 top-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white">
-                  {index + 1}
+                  {displayIndex}
                 </span>
               </button>
             );
           })}
 
           <button
-  type="button"
-  onClick={() => setShowMediaPicker(true)}
-  className="flex h-[122px] items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white text-2xl text-gray-600 transition hover:border-black hover:bg-gray-50"
->
-  +
-</button>
+            type="button"
+            onClick={() => setShowMediaPicker(true)}
+            className="flex h-[122px] items-center justify-center rounded-xl border border-dashed border-gray-300 bg-white text-2xl text-gray-600 transition hover:border-black hover:bg-gray-50"
+          >
+            +
+          </button>
         </div>
       )}
     </div>
-
-    
 
     {activeMediaIndex !== null && media[activeMediaIndex] && (
       <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
@@ -3688,21 +3828,11 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                   </div>
 
                   <div className="flex flex-wrap gap-2">
-                   <Button
-  disabled={saving || !mediaId}
-  onClick={() => saveMediaMetadata(item, activeMediaIndex)}
->
-  {saving ? 'Saving...' : 'Save details'}
-</Button>
-
-   
-
                     <Button
-                      disabled={!mediaId}
-                      variant="danger"
-                      onClick={() => deleteImage(mediaId)}
+                      disabled={saving || !mediaId}
+                      onClick={() => saveMediaMetadata(item, activeMediaIndex)}
                     >
-                      Delete
+                      {saving ? 'Saving...' : 'Save details'}
                     </Button>
                   </div>
                 </div>
@@ -3907,8 +4037,12 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
       return;
     }
 
-    await uploadSelectedMedia();
-    setShowMediaPicker(false);
+    try {
+      await uploadSelectedMedia();
+      setShowMediaPicker(false);
+    } catch {
+      // error state uploadSelectedMedia ke andar set ho chuki hai
+    }
   }}
 >
   Done

@@ -8,7 +8,7 @@ type VariantStockPayload = {
 };
 
 function makeFormData(
-  fieldName: 'images' | 'image' | 'file' | 'video' | 'videos',
+  fieldName: 'images' | 'image' | 'file' | 'videos',
   input: FormData | File[] | FileList,
 ) {
   if (input instanceof FormData) {
@@ -170,33 +170,29 @@ export const adminCatalogService = {
   uploadVideo: async (id: string, input: FormData | File[] | FileList) => {
     const files = getFilesFromInput(input);
   
-    const results = [];
+    const formData = new FormData();
   
     if (files.length > 0) {
-      for (const file of files) {
-        const formData = new FormData();
-  
-        formData.append('video', file);
-  
-        const res = await api.post(
-          `/catalog/${encodeURIComponent(id)}/video`,
-          formData,
-        );
-  
-        results.push(res.data);
-      }
-  
-      return results.length === 1 ? results[0] : results;
+      files.forEach((file) => {
+        formData.append('videos', file);
+      });
+    } else if (input instanceof FormData) {
+      input.forEach((value, key) => {
+        if (value instanceof File) {
+          formData.append('videos', value);
+        } else {
+          formData.append(key, value);
+        }
+      });
     }
   
     const res = await api.post(
       `/catalog/${encodeURIComponent(id)}/video`,
-      input instanceof FormData ? input : makeFormData('video', input),
+      formData,
     );
   
     return res.data;
   },
-
   uploadVideos: async (id: string, input: FormData | File[] | FileList) => {
     return adminCatalogService.uploadVideo(id, input);
   },
