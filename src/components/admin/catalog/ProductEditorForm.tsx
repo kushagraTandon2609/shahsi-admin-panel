@@ -129,15 +129,24 @@ export function ProductEditorForm({
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [mediaUploadProgress, setMediaUploadProgress] = useState({
+    loaded: 0,
+    total: 0,
+    percent: 0,
+    label: 'Uploading media',
+  });
   
   const [saveMessage, setSaveMessage] = useState('');
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const savedSnapshotRef = useRef('');
+  const hydratingRef = useRef(true);
   const [lastSavedCategoryIds, setLastSavedCategoryIds] = useState<string[]>([]);
 const [lastSavedPrimaryCategoryId, setLastSavedPrimaryCategoryId] = useState('');
 const [dragActive, setDragActive] = useState(false);
 const [selectedMedia, setSelectedMedia] = useState<SelectedMedia[]>([]);
 const [selectedMediaDragIndex, setSelectedMediaDragIndex] = useState<number | null>(null);
 const [mediaDragIndex, setMediaDragIndex] = useState<number | null>(null);
-
+const [selectedUploadedMediaIds, setSelectedUploadedMediaIds] = useState<string[]>([]);
 const [categoryTree, setCategoryTree] = useState<any[]>([]);
 const [showSimilarProductPicker, setShowSimilarProductPicker] = useState(false);
 const [similarProductSearch, setSimilarProductSearch] = useState('');
@@ -214,6 +223,7 @@ const [primaryCategoryId, setPrimaryCategoryId] = useState<string>(
 
 const [showMediaPicker, setShowMediaPicker] = useState(false);
 const [activeMediaIndex, setActiveMediaIndex] = useState<number | null>(null);
+const [activeSelectedMediaIndex, setActiveSelectedMediaIndex] = useState<number | null>(null);
 
   const initialTitle = initialProduct?.title || initialProduct?.name || '';
   const initialSlug =
@@ -443,11 +453,17 @@ setSelectedMetafieldProducts({
       initialProduct.similarPrintProducts,
   ),
 });
+setTimeout(() => {
+  hydratingRef.current = false;
+  resetSavedSnapshot();
+}, 0);
 
   }, [initialProduct, initialMedia, initialVariants]);
 
   const currentProductId =
     productId || product?.id || product?.productId || product?._id || '';
+
+    
 
     async function logToTerminal(
   action: string,
@@ -484,9 +500,20 @@ setSelectedMetafieldProducts({
 
     
 
-  function updateForm(setter: any, key: string, value: string) {
-    setter((prev: any) => ({ ...prev, [key]: value }));
-  }
+function markUnsavedChanges() {
+  if (hydratingRef.current) return;
+  setSaveMessage('');
+}
+function showSaveSuccessMessage(message = 'Product changes saved successfully.') {
+  setSaveMessage(message);
+
+  window.setTimeout(() => {
+    setSaveMessage('');
+  }, 4000);
+}
+function updateForm(setter: any, key: string, value: string) {
+  setter((prev: any) => ({ ...prev, [key]: value }));
+}
 
   useEffect(() => {
     if (mode !== 'edit' || !currentProductId) return;
@@ -523,6 +550,115 @@ useEffect(() => {
     return next;
   });
 }, [media]);
+
+function normalizeSnapshotValue(value: any): any {
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => normalizeSnapshotValue(item))
+      .filter((item) => item !== '' && item !== null && item !== undefined);
+  }
+
+  if (value && typeof value === 'object') {
+    return JSON.stringify(value);
+  }
+
+  return String(value ?? '').trim();
+}
+
+function buildProductFormSnapshot() {
+  return JSON.stringify({
+    basicForm: {
+      title: normalizeSnapshotValue(basicForm.title),
+      name: normalizeSnapshotValue(basicForm.name),
+      slug: normalizeSnapshotValue(basicForm.slug),
+      sku: normalizeSnapshotValue(basicForm.sku),
+      description: normalizeSnapshotValue(basicForm.description),
+    },
+
+    pricingForm: {
+      price: normalizeSnapshotValue(pricingForm.price),
+      compareAtPrice: normalizeSnapshotValue(pricingForm.compareAtPrice),
+      rentalPrice: normalizeSnapshotValue(pricingForm.rentalPrice),
+      depositAmount: normalizeSnapshotValue(pricingForm.depositAmount),
+    },
+
+    availabilityForm: {
+      stock: normalizeSnapshotValue(availabilityForm.stock),
+      status: normalizeSnapshotValue(availabilityForm.status),
+      isAvailable: normalizeSnapshotValue(availabilityForm.isAvailable),
+    },
+
+    commerceForm: {
+      isShopEnabled: normalizeSnapshotValue(commerceForm.isShopEnabled),
+      isRentalEnabled: normalizeSnapshotValue(commerceForm.isRentalEnabled),
+      isResaleEnabled: normalizeSnapshotValue(commerceForm.isResaleEnabled),
+    },
+
+    organizationForm: {
+      category: normalizeSnapshotValue(organizationForm.category),
+      productType: normalizeSnapshotValue(organizationForm.productType),
+      vendor: normalizeSnapshotValue(organizationForm.vendor),
+      collections: normalizeSnapshotValue(organizationForm.collections),
+      tags: normalizeSnapshotValue(organizationForm.tags),
+    },
+
+    seoForm: {
+      metaTitle: normalizeSnapshotValue(seoForm.metaTitle),
+      metaDescription: normalizeSnapshotValue(seoForm.metaDescription),
+      urlHandle: normalizeSnapshotValue(seoForm.urlHandle),
+    },
+
+    productMetafields: Object.keys(productMetafields || {})
+      .sort()
+      .reduce((acc: Record<string, any>, key) => {
+        acc[key] = normalizeSnapshotValue(productMetafields[key]);
+        return acc;
+      }, {}),
+
+    selectedCategoryIds: [...selectedCategoryIds].sort(),
+    primaryCategoryId: normalizeSnapshotValue(primaryCategoryId),
+
+    selectedMedia: selectedMedia.map((item) => ({
+      fileName: item.file.name,
+      fileSize: item.file.size,
+      fileLastModified: item.file.lastModified,
+      name: normalizeSnapshotValue(item.name),
+      altText: normalizeSnapshotValue(item.altText),
+    })),
+
+    mediaOrder: media.map((item) => normalizeSnapshotValue(getMediaId(item))),
+  });
+}
+
+function resetSavedSnapshot() {
+  const nextSnapshot = buildProductFormSnapshot();
+  savedSnapshotRef.current = nextSnapshot;
+  
+}
+
+useEffect(() => {
+  if (hydratingRef.current) return;
+
+  const currentSnapshot = buildProductFormSnapshot();
+  const isDirty = currentSnapshot !== savedSnapshotRef.current;
+
+  setHasUnsavedChanges(isDirty);
+
+ 
+}, [
+  basicForm,
+  pricingForm,
+  availabilityForm,
+  commerceForm,
+  organizationForm,
+  seoForm,
+  productMetafields,
+  selectedCategoryIds,
+  primaryCategoryId,
+  selectedMedia,
+  media,
+]);
+
 function getProductId(product: any) {
  const p = product?.product || product?.catalogProduct || product;
  return String(
@@ -1430,8 +1566,9 @@ function getPrimaryCategorySlug(
 }
 
 function handleCategorySelectionChange(nextIds: string[]) {
+  markUnsavedChanges();
   const nextSelected = Array.from(new Set(nextIds.filter(Boolean)));
-
+  
   setSelectedCategoryIds(nextSelected);
 
   if (primaryCategoryId && !nextSelected.includes(primaryCategoryId)) {
@@ -1444,6 +1581,7 @@ function handleCategorySelectionChange(nextIds: string[]) {
 }
 
 function handlePrimaryCategoryChange(categoryId: string) {
+  markUnsavedChanges();
   const category =
     findCategoryById(categoryTree, categoryId) ||
     findCategoryByAnyValue(categoryTree, categoryId);
@@ -2076,6 +2214,10 @@ setPrimaryCategoryId(
     if (variantsRes.status === 'fulfilled') {
       setVariants(unwrapList(variantsRes.value));
     }
+    setTimeout(() => {
+      hydratingRef.current = false;
+      resetSavedSnapshot();
+    }, 0);
   } catch (err: any) {
     setError(getApiErrorMessage(err));
   }
@@ -2147,6 +2289,7 @@ async function createProduct(e?: FormEvent) {
   setSaving(true);
 setError('');
 setSaveMessage('');
+
 
   try {
     const cleanUrlHandle = makeSeoUrlHandle(
@@ -2413,7 +2556,7 @@ secondaryCollection: secondaryCollectionValue,
       onCreated(createdProduct || created);
       return;
     }
-
+    showSaveSuccessMessage('Product created successfully.');
     router.push(`/admin/catalog/${id}`);
   } catch (err: any) {
     const message = getApiErrorMessage(err);
@@ -2598,8 +2741,13 @@ setPrimaryCategoryId(primaryIdSnapshot);
 setLastSavedCategoryIds(selectedIdsSnapshot);
 setLastSavedPrimaryCategoryId(primaryIdSnapshot);
 
-    setSaveMessage('Product changes saved successfully.');
-    await onReload?.();
+await onReload?.();
+
+window.setTimeout(() => {
+  resetSavedSnapshot();
+  setHasUnsavedChanges(false);
+  showSaveSuccessMessage('Product changes saved successfully.');
+}, 150);
   } catch (err: any) {
     setError(getApiErrorMessage(err));
   } finally {
@@ -2936,7 +3084,7 @@ function addMediaFiles(files: FileList | File[]) {
     setError('Please select image or video files only.');
     return;
   }
-
+  markUnsavedChanges();
   setSelectedMedia((prev) => {
     const next = [...prev];
 
@@ -2978,6 +3126,7 @@ function moveArrayItem<T>(list: T[], fromIndex: number, toIndex: number) {
   return copy;
 }
 function updateSelectedMedia(index: number, key: 'name' | 'altText', value: string) {
+  markUnsavedChanges();
   setSelectedMedia((prev) =>
     prev.map((item, itemIndex) =>
       itemIndex === index
@@ -2991,6 +3140,7 @@ function updateSelectedMedia(index: number, key: 'name' | 'altText', value: stri
 }
 
 function handleSelectedMediaDrop(fromIndex: number, toIndex: number) {
+  markUnsavedChanges();
   if (fromIndex === toIndex) return;
 
   setSelectedMedia((prev) => {
@@ -3010,6 +3160,7 @@ function handleSelectedMediaDrop(fromIndex: number, toIndex: number) {
 }
 
 function handleMediaDrop(index: number) {
+  markUnsavedChanges();
   if (mediaDragIndex === null || mediaDragIndex === index) return;
 
   setMedia((prev) => moveArrayItem(prev, mediaDragIndex, index));
@@ -3017,18 +3168,85 @@ function handleMediaDrop(index: number) {
 }
 
 function removeSelectedMedia(index: number) {
+  markUnsavedChanges();
   setSelectedMedia((prev) => {
     const removed = prev[index];
-    if (removed?.previewUrl) URL.revokeObjectURL(removed.previewUrl);
+
+    if (removed?.previewUrl) {
+      URL.revokeObjectURL(removed.previewUrl);
+    }
+
     return prev.filter((_, itemIndex) => itemIndex !== index);
   });
+
+  setActiveSelectedMediaIndex((prev) => {
+    if (prev === null) return null;
+    if (prev === index) return null;
+    if (prev > index) return prev - 1;
+    return prev;
+  });
+}
+function toggleUploadedMediaSelection(mediaId: string) {
+  if (!mediaId) return;
+
+  setSelectedUploadedMediaIds((prev) =>
+    prev.includes(mediaId)
+      ? prev.filter((id) => id !== mediaId)
+      : [...prev, mediaId],
+  );
 }
 
+function clearUploadedMediaSelection() {
+  setSelectedUploadedMediaIds([]);
+}
+
+function selectAllUploadedMedia() {
+  const ids = media
+    .map((item) => getMediaId(item))
+    .map((id) => String(id || '').trim())
+    .filter(Boolean);
+
+  setSelectedUploadedMediaIds(Array.from(new Set(ids)));
+}
 function clearSelectedMedia() {
   selectedMedia.forEach((item) => URL.revokeObjectURL(item.previewUrl));
   setSelectedMedia([]);
 }
+function formatUploadBytes(bytes: number) {
+  const safeBytes = Number(bytes || 0);
 
+  if (safeBytes < 1024 * 1024) {
+    return `${(safeBytes / 1024).toFixed(1)} KB`;
+  }
+
+  return `${(safeBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function resetMediaUploadProgress() {
+  setMediaUploadProgress({
+    loaded: 0,
+    total: 0,
+    percent: 0,
+    label: 'Uploading media',
+  });
+}
+
+function updateMediaUploadProgressBytes(
+  loaded: number,
+  total: number,
+  label = 'Uploading media',
+) {
+  const safeTotal = Number(total || 0);
+  const safeLoaded = Math.min(Number(loaded || 0), safeTotal);
+  const percent = safeTotal > 0 ? Math.round((safeLoaded / safeTotal) * 100) : 0;
+
+  setMediaUploadProgress({
+    loaded: safeLoaded,
+    total: safeTotal,
+    percent,
+    label,
+  });
+}
 async function uploadSelectedMedia(targetProductId = currentProductId) {
   await logToTerminal(
     'UPLOAD_MEDIA_CLICK',
@@ -3063,7 +3281,8 @@ async function uploadSelectedMedia(targetProductId = currentProductId) {
   }
 
   setUploadingMedia(true);
-  setError('');
+resetMediaUploadProgress();
+setError('');
 
   try {
     const imageItems = validMedia.filter((item) =>
@@ -3077,17 +3296,62 @@ async function uploadSelectedMedia(targetProductId = currentProductId) {
     let imageUploadResponse: any = null;
     let videoUploadResponse: any = null;
 
+    const imageBytesTotal = imageItems.reduce(
+      (total, item) => total + Number(item.file.size || 0),
+      0,
+    );
+    
+    const videoBytesTotal = videoItems.reduce(
+      (total, item) => total + Number(item.file.size || 0),
+      0,
+    );
+    
+    const totalUploadBytes = imageBytesTotal + videoBytesTotal;
+    
+    let uploadedImageBytes = 0;
+    let uploadedVideoBytes = 0;
+    
+    const updateCombinedUploadProgress = (label = 'Uploading media') => {
+      updateMediaUploadProgressBytes(
+        uploadedImageBytes + uploadedVideoBytes,
+        totalUploadBytes,
+        label,
+      );
+    };
+    
+    updateCombinedUploadProgress('Uploading media');
+
     const [imageResult, videoResult] = await Promise.allSettled([
       imageItems.length > 0
         ? adminCatalogService.uploadImages(
             targetProductId,
             imageItems.map((item) => item.file),
+            (progressEvent: any) => {
+              uploadedImageBytes = Math.min(
+                Number(progressEvent?.loaded || 0),
+                imageBytesTotal,
+              );
+    
+              updateCombinedUploadProgress(
+                videoItems.length > 0 ? 'Uploading images and videos' : 'Uploading images',
+              );
+            },
           )
         : Promise.resolve(null),
       videoItems.length > 0
         ? adminCatalogService.uploadVideos(
             targetProductId,
             videoItems.map((item) => item.file),
+            (progressEvent: any) => {
+              uploadedVideoBytes = Math.min(
+                Number(progressEvent?.loaded || 0),
+                videoBytesTotal,
+              );
+    
+              updateCombinedUploadProgress(
+                imageItems.length > 0 ? 'Uploading images and videos' : 'Uploading videos',
+              );
+            },
           )
         : Promise.resolve(null),
     ]);
@@ -3177,9 +3441,10 @@ async function uploadSelectedMedia(targetProductId = currentProductId) {
 
     setError(message);
 return;
-  } finally {
-    setUploadingMedia(false);
-  }
+} finally {
+  setUploadingMedia(false);
+  resetMediaUploadProgress();
+}
 }
 
 async function saveMediaOrder(showOwnLoader = true) {
@@ -3262,6 +3527,79 @@ async function saveMediaOrder(showOwnLoader = true) {
     }
   }
 }
+
+async function bulkDeleteMedia() {
+  const ids = selectedUploadedMediaIds
+    .map((id) => String(id || '').trim())
+    .filter(Boolean);
+
+  if (ids.length === 0) {
+    setError('Please select media to delete.');
+    return;
+  }
+
+  await logToTerminal(
+    'BULK_DELETE_MEDIA_CLICK',
+    {
+      ids,
+      count: ids.length,
+      url: '/catalog/media/bulk',
+    },
+    200,
+    'Bulk delete media clicked',
+  );
+
+  setSaving(true);
+  setError('');
+
+  try {
+    const res = await adminCatalogService.bulkDeleteMedia(ids);
+
+    await logToTerminal(
+      'BULK_DELETE_MEDIA_SUCCESS',
+      {
+        ids,
+        count: ids.length,
+        response: res,
+        url: '/catalog/media/bulk',
+      },
+      200,
+      'Bulk delete media API success',
+    );
+
+    setMedia((prev) =>
+      prev.filter((item) => !ids.includes(String(getMediaId(item) || ''))),
+    );
+
+    setSelectedUploadedMediaIds([]);
+    setActiveMediaIndex(null);
+
+    if (currentProductId) {
+      await reloadProduct(currentProductId);
+    }
+
+    await onReload?.();
+  } catch (err: any) {
+    const message = getApiErrorMessage(err);
+
+    await logToTerminal(
+      'BULK_DELETE_MEDIA_ERROR',
+      {
+        ids,
+        count: ids.length,
+        errorMessage: message,
+        response: err?.response?.data || err?.message || err,
+        url: '/catalog/media/bulk',
+      },
+      err?.response?.status || 500,
+      message,
+    );
+
+    setError(message);
+  } finally {
+    setSaving(false);
+  }
+}
 async function deleteImage(imageId: string, askConfirm = false) {
   await logToTerminal(
     'DELETE_IMAGE_CLICK',
@@ -3317,6 +3655,7 @@ async function deleteImage(imageId: string, askConfirm = false) {
     );
 
     setMedia((prev) => prev.filter((item) => getMediaId(item) !== imageId));
+    setSelectedUploadedMediaIds((prev) => prev.filter((id) => id !== imageId));
     setActiveMediaIndex(null);
 
     if (currentProductId) {
@@ -3414,7 +3753,20 @@ async function setPrimaryImage(imageId: string) {
     setSaving(false);
   }
 }
+async function discardProductChanges() {
+  setError('');
+  setSaveMessage('');
 
+  if (mode === 'create') {
+    router.push('/admin/catalog');
+    return;
+  }
+
+  if (currentProductId) {
+    await reloadProduct(currentProductId);
+    await onReload?.();
+  }
+}
 async function publishProduct() {
   if (!currentProductId) return;
 
@@ -3451,22 +3803,12 @@ async function unpublishProduct() {
   }
 }
 return (
+  
   <div className="mx-auto max-w-[1500px]">
-    {(saving || uploadingMedia) && (
-  <div className="fixed inset-0 z-[9999] flex items-start justify-center bg-white/70 pt-24 backdrop-blur-sm">
-    <div className="rounded-2xl border border-gray-200 bg-white px-6 py-5 text-center shadow-xl">
-      <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-4 border-gray-200 border-t-black" />
-      <p className="text-sm font-semibold text-gray-950">
-        {uploadingMedia ? 'Uploading media...' : 'Saving product...'}
-      </p>
-      <p className="mt-1 text-xs text-gray-500">
-        Please wait, do not close this page.
-      </p>
-    </div>
-  </div>
-)}
+    
 
     <ApiError message={error} />
+
 
     {saveMessage && (
       <div className="mb-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-700">
@@ -3495,13 +3837,22 @@ return (
             )}
           </div>
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+  <button
+    type="button"
+    disabled={saving}
+    onClick={discardProductChanges}
+    className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    Discard
+  </button>
+
   <Button
     type="button"
     onClick={mode === 'create' ? createProduct : saveAllChanges}
-    disabled={saving || uploadingMedia}
+    disabled={saving}
   >
-    {saving || uploadingMedia
+    {saving
       ? mode === 'create'
         ? 'Saving product...'
         : 'Saving changes...'
@@ -3586,11 +3937,45 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
             </div>
           </Card>
 
-          <Card className="p-0">
+          <Card className="relative overflow-hidden p-0">
   <div className="border-b border-gray-200 px-5 py-4">
     <h2 className="text-base font-bold text-gray-950">Media</h2>
   </div>
+  {uploadingMedia && (
+  <div className="absolute inset-0 z-20 flex items-center justify-center bg-white/80 px-5 backdrop-blur-sm">
+    <div className="w-full max-w-md rounded-2xl border border-gray-200 bg-white p-5 shadow-xl">
+      <div className="mb-3 flex items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold text-gray-950">
+            {mediaUploadProgress.label || 'Uploading media'}
+          </p>
 
+          <p className="mt-1 text-xs text-gray-500">
+            {formatUploadBytes(mediaUploadProgress.loaded)} of{' '}
+            {formatUploadBytes(mediaUploadProgress.total)} uploaded
+          </p>
+        </div>
+
+        <span className="rounded-full bg-gray-100 px-2.5 py-1 text-xs font-semibold text-gray-700">
+          {mediaUploadProgress.percent}%
+        </span>
+      </div>
+
+      <div className="h-2 overflow-hidden rounded-full bg-gray-100">
+        <div
+          className="h-full rounded-full bg-gray-950 transition-all duration-300"
+          style={{
+            width: `${Math.min(mediaUploadProgress.percent, 100)}%`,
+          }}
+        />
+      </div>
+
+      <p className="mt-3 text-xs text-gray-500">
+        Uploading inside media section. You can continue editing other product details.
+      </p>
+    </div>
+  </div>
+)}
   <div className="px-5 py-5">
     <input
       id="product-media-input"
@@ -3648,11 +4033,73 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
           </p>
         </div>
       ) : (
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
+        <>
+          {media.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-gray-200 bg-gray-50 px-4 py-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <label className="inline-flex cursor-pointer items-center gap-2 text-sm font-medium text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={
+                      media.length > 0 &&
+                      selectedUploadedMediaIds.length ===
+                        media
+                          .map((item) => getMediaId(item))
+                          .filter(Boolean).length
+                    }
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        selectAllUploadedMedia();
+                      } else {
+                        clearUploadedMediaSelection();
+                      }
+                    }}
+                    className="h-4 w-4 rounded border-gray-300"
+                  />
+      
+                  Select all uploaded media
+                </label>
+      
+                {selectedUploadedMediaIds.length > 0 && (
+                  <span className="rounded-full bg-black px-3 py-1 text-xs font-semibold text-white">
+                    {selectedUploadedMediaIds.length} selected
+                  </span>
+                )}
+              </div>
+      
+              {selectedUploadedMediaIds.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={clearUploadedMediaSelection}
+                    className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-100"
+                  >
+                    Clear
+                  </button>
+      
+                  <button
+                    type="button"
+                    disabled={saving}
+                    onClick={bulkDeleteMedia}
+                    className="rounded-xl bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                  >
+                    Delete selected
+                  </button>
+                </div>
+              )}
+            </div>
+            
+          )}
+      
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
           {selectedMedia.map((item, index) => (
             <div
-              key={`${item.file.name}-${item.file.lastModified}-${index}`}
-              draggable
+            key={`${item.file.name}-${item.file.lastModified}-${index}`}
+            draggable
+            onClick={() => {
+              setActiveSelectedMediaIndex(index);
+              setActiveMediaIndex(null);
+            }}
               onDragStart={(e) => {
                 setSelectedMediaDragIndex(index);
                 e.dataTransfer.effectAllowed = 'move';
@@ -3678,7 +4125,11 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                   handleSelectedMediaDrop(fromIndex, index);
                 }
               }}
-              className="group relative cursor-move overflow-hidden rounded-xl border border-gray-200 bg-white p-1 transition hover:border-black"
+              className={`group relative cursor-move overflow-hidden rounded-xl border bg-white p-1 transition hover:border-black ${
+                activeSelectedMediaIndex === index
+                  ? 'border-black ring-2 ring-black/10'
+                  : 'border-gray-200'
+              }`}
             >
               {item.file.type.startsWith('video/') ? (
                 <video
@@ -3721,6 +4172,9 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
             const mediaUrl = getMediaUrl(item);
             const isVideo = isVideoMedia(item);
             const active = activeMediaIndex === index;
+            const selectedForBulkDelete = mediaId
+  ? selectedUploadedMediaIds.includes(String(mediaId))
+  : false;
             const displayIndex = selectedMedia.length + index + 1;
 
             return (
@@ -3744,9 +4198,12 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                   e.currentTarget.style.borderColor = '';
                   handleMediaDrop(index);
                 }}
-                onClick={() => setActiveMediaIndex(index)}
+                onClick={() => {
+                  setActiveMediaIndex(index);
+                  setActiveSelectedMediaIndex(null);
+                }}
                 className={`group relative cursor-move overflow-hidden rounded-xl border bg-white p-1 transition hover:border-black ${
-                  active
+                  active || selectedForBulkDelete
                     ? 'border-black ring-2 ring-black/10'
                     : 'border-gray-200'
                 }`}
@@ -3779,6 +4236,32 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                   <span className="absolute inset-0 flex items-center justify-center text-white">
                     ▶
                   </span>
+                )}
+
+                {mediaId && (
+                  <span
+                  role="checkbox"
+                  aria-checked={selectedForBulkDelete}
+                  tabIndex={0}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleUploadedMediaSelection(String(mediaId));
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toggleUploadedMediaSelection(String(mediaId));
+                    }
+                  }}
+                  className={`absolute left-2 bottom-2 z-10 flex h-6 w-6 items-center justify-center rounded-md border text-xs font-bold shadow-sm transition ${
+                    selectedForBulkDelete
+                      ? 'border-black bg-black text-white'
+                      : 'border-gray-300 bg-white text-transparent hover:text-gray-500'
+                  }`}
+                >
+                  ✓
+                </span>
                 )}
 
                 {mediaId && (
@@ -3816,9 +4299,114 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
             +
           </button>
         </div>
+        </>
       )}
     </div>
+    {activeSelectedMediaIndex !== null && selectedMedia[activeSelectedMediaIndex] && (
+  <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+    {(() => {
+      const item = selectedMedia[activeSelectedMediaIndex];
+      const isVideo = item.file.type.startsWith('video/');
 
+      return (
+        <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="rounded-2xl bg-gray-50 p-4">
+            {isVideo ? (
+              <video
+                src={item.previewUrl}
+                className="max-h-[520px] w-full rounded-xl object-contain"
+                controls
+              />
+            ) : (
+              <img
+                src={item.previewUrl}
+                alt={item.altText || item.name || 'media'}
+                className="max-h-[520px] w-full rounded-xl object-contain"
+              />
+            )}
+          </div>
+
+          <div>
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-base font-bold text-gray-950">
+                  Media details
+                </h3>
+
+                <p className="mt-1 text-xs text-gray-500">
+                  Edit name and alt text before saving this product.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setActiveSelectedMediaIndex(null)}
+                className="rounded-lg px-2 py-1 text-sm text-gray-500 hover:bg-gray-100"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-gray-700">
+                  Name
+                </span>
+
+                <input
+                  value={item.name || ''}
+                  onChange={(e) =>
+                    updateSelectedMedia(
+                      activeSelectedMediaIndex,
+                      'name',
+                      e.target.value,
+                    )
+                  }
+                  className="h-11 w-full rounded-xl border border-gray-200 px-3 text-sm outline-none transition focus:border-black focus:ring-4 focus:ring-black/10"
+                  placeholder="Media name"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-sm font-semibold text-gray-700">
+                  Alt text
+                </span>
+
+                <textarea
+                  value={item.altText || ''}
+                  onChange={(e) =>
+                    updateSelectedMedia(
+                      activeSelectedMediaIndex,
+                      'altText',
+                      e.target.value,
+                    )
+                  }
+                  className="min-h-32 w-full rounded-xl border border-gray-200 px-3 py-2 text-sm outline-none transition focus:border-black focus:ring-4 focus:ring-black/10"
+                  placeholder="Describe this image for accessibility and SEO"
+                />
+              </label>
+
+              <div className="space-y-1 rounded-xl bg-gray-50 p-3 text-xs text-gray-500">
+                <p>Order: #{activeSelectedMediaIndex + 1}</p>
+                <p>File: {item.file.name}</p>
+                <p>Type: {isVideo ? 'Video' : 'Image'}</p>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  onClick={() => setActiveSelectedMediaIndex(null)}
+                >
+                  Done details
+                </Button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+  </div>
+)}
     {activeMediaIndex !== null && media[activeMediaIndex] && (
       <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
         {(() => {
@@ -4207,7 +4795,10 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
 
 <ProductMetafieldsEditor
   initialValues={productMetafields}
-  onChange={setProductMetafields}
+  onChange={(nextValues) => {
+    markUnsavedChanges();
+    setProductMetafields(nextValues);
+  }}
   currentProductId={currentProductId}
   categoryTree={categoryTree}
   onAddCategory={addCategoryFromProductEditor}
@@ -4439,6 +5030,7 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
             className="w-full px-3 py-2 text-sm outline-none"
             value={seoForm.urlHandle}
             onChange={(e) => {
+              markUnsavedChanges();
   const inputUrlHandle = sanitizeSeoUrlInput(e.target.value);
 
   setSeoForm((prev) => ({
@@ -4644,7 +5236,32 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
             </form>
           </Card>
         </div>
-      </div>
-    </div>
-  );
+        </div>
+
+<div className="mt-8 flex justify-end gap-2 border-t border-gray-200 pt-5">
+  <button
+    type="button"
+    disabled={saving}
+    onClick={discardProductChanges}
+    className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    Discard
+  </button>
+
+  <Button
+    type="button"
+    onClick={mode === 'create' ? createProduct : saveAllChanges}
+    disabled={saving}
+  >
+    {saving
+      ? mode === 'create'
+        ? 'Saving product...'
+        : 'Saving changes...'
+      : mode === 'create'
+        ? 'Save product'
+        : 'Save changes'}
+  </Button>
+</div>
+</div>
+);
 }

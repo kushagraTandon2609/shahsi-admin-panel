@@ -136,7 +136,11 @@ export const adminCatalogService = {
   // POST /catalog/{id}/video
   // =====================================================
 
-  uploadImages: async (id: string, input: FormData | File[] | FileList) => {
+  uploadImages: async (
+    id: string,
+    input: FormData | File[] | FileList,
+    onUploadProgress?: (progressEvent: any) => void,
+  ) => {
     const files = getFilesFromInput(input);
   
     const formData = new FormData();
@@ -158,16 +162,27 @@ export const adminCatalogService = {
     const res = await api.post(
       `/catalog/${encodeURIComponent(id)}/images`,
       formData,
+      {
+        onUploadProgress,
+      },
     );
   
     return res.data;
   },
 
-  uploadImage: async (id: string, input: FormData | File[] | FileList) => {
-    return adminCatalogService.uploadImages(id, input);
+  uploadImage: async (
+    id: string,
+    input: FormData | File[] | FileList,
+    onUploadProgress?: (progressEvent: any) => void,
+  ) => {
+    return adminCatalogService.uploadImages(id, input, onUploadProgress);
   },
 
-  uploadVideo: async (id: string, input: FormData | File[] | FileList) => {
+  uploadVideo: async (
+    id: string,
+    input: FormData | File[] | FileList,
+    onUploadProgress?: (progressEvent: any) => void,
+  ) => {
     const files = getFilesFromInput(input);
   
     const formData = new FormData();
@@ -189,12 +204,19 @@ export const adminCatalogService = {
     const res = await api.post(
       `/catalog/${encodeURIComponent(id)}/video`,
       formData,
+      {
+        onUploadProgress,
+      },
     );
   
     return res.data;
   },
-  uploadVideos: async (id: string, input: FormData | File[] | FileList) => {
-    return adminCatalogService.uploadVideo(id, input);
+  uploadVideos: async (
+    id: string,
+    input: FormData | File[] | FileList,
+    onUploadProgress?: (progressEvent: any) => void,
+  ) => {
+    return adminCatalogService.uploadVideo(id, input, onUploadProgress);
   },
 
   deleteImage: async (imageId: string) => {
@@ -203,7 +225,15 @@ export const adminCatalogService = {
     );
     return res.data;
   },
-
+  bulkDeleteMedia: async (ids: string[]) => {
+    const res = await api.delete('/catalog/media/bulk', {
+      data: {
+        ids,
+      },
+    });
+  
+    return res.data;
+  },
   fit: async (id: string, payload: any = {}) => {
     const res = await api.post(`/catalog/${encodeURIComponent(id)}/fit`, payload);
     return res.data;
