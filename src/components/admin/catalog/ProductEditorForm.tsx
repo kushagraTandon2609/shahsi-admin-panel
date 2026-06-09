@@ -3138,8 +3138,10 @@ function updateSelectedMedia(index: number, key: 'name' | 'altText', value: stri
 }
 
 function handleSelectedMediaDrop(fromIndex: number, toIndex: number) {
-  markUnsavedChanges();
-  if (fromIndex === toIndex) return;
+  if (fromIndex === toIndex) {
+    setSelectedMediaDragIndex(null);
+    return;
+  }
 
   setSelectedMedia((prev) => {
     if (
@@ -3151,17 +3153,38 @@ function handleSelectedMediaDrop(fromIndex: number, toIndex: number) {
       return prev;
     }
 
+    markUnsavedChanges();
     return moveArrayItem(prev, fromIndex, toIndex);
   });
 
   setSelectedMediaDragIndex(null);
 }
 
-function handleMediaDrop(index: number) {
-  markUnsavedChanges();
-  if (mediaDragIndex === null || mediaDragIndex === index) return;
+function handleMediaDrop(toIndex: number, fromIndexFromEvent?: number) {
+  const fromIndex =
+    typeof fromIndexFromEvent === 'number' && !Number.isNaN(fromIndexFromEvent)
+      ? fromIndexFromEvent
+      : mediaDragIndex;
 
-  setMedia((prev) => moveArrayItem(prev, mediaDragIndex, index));
+  if (fromIndex === null || fromIndex === toIndex) {
+    setMediaDragIndex(null);
+    return;
+  }
+
+  setMedia((prev) => {
+    if (
+      fromIndex < 0 ||
+      toIndex < 0 ||
+      fromIndex >= prev.length ||
+      toIndex >= prev.length
+    ) {
+      return prev;
+    }
+
+    markUnsavedChanges();
+    return moveArrayItem(prev, fromIndex, toIndex);
+  });
+
   setMediaDragIndex(null);
 }
 
@@ -4103,6 +4126,9 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                 e.dataTransfer.effectAllowed = 'move';
                 e.dataTransfer.setData('text/plain', String(index));
               }}
+              onDragEnd={() => {
+                setSelectedMediaDragIndex(null);
+              }}
               onDragOver={(e) => {
                 e.preventDefault();
                 e.currentTarget.style.opacity = '0.5';
@@ -4131,15 +4157,17 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
             >
               {item.file.type.startsWith('video/') ? (
                 <video
-                  src={item.previewUrl}
-                  className="h-28 w-full rounded-lg object-cover"
-                />
+                src={item.previewUrl}
+                draggable={false}
+                className="h-28 w-full rounded-lg object-cover"
+              />
               ) : (
                 <img
-                  src={item.previewUrl}
-                  alt={item.altText || item.name}
-                  className="h-28 w-full rounded-lg object-cover"
-                />
+  src={item.previewUrl}
+  draggable={false}
+  alt={item.altText || item.name}
+  className="h-28 w-full rounded-lg object-cover"
+/>
               )}
 
               <button
@@ -4180,7 +4208,14 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                 key={mediaId || mediaUrl || index}
                 type="button"
                 draggable
-                onDragStart={() => setMediaDragIndex(index)}
+                onDragStart={(e) => {
+                  setMediaDragIndex(index);
+                  e.dataTransfer.effectAllowed = 'move';
+                  e.dataTransfer.setData('media-index', String(index));
+                }}
+                onDragEnd={() => {
+                  setMediaDragIndex(null);
+                }}
                 onDragOver={(e) => {
                   e.preventDefault();
                   e.currentTarget.style.opacity = '0.5';
@@ -4194,7 +4229,10 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                   e.preventDefault();
                   e.currentTarget.style.opacity = '1';
                   e.currentTarget.style.borderColor = '';
-                  handleMediaDrop(index);
+                
+                  const fromIndex = Number(e.dataTransfer.getData('media-index'));
+                
+                  handleMediaDrop(index, Number.isNaN(fromIndex) ? undefined : fromIndex);
                 }}
                 onClick={() => {
                   setActiveMediaIndex(index);
@@ -4209,20 +4247,22 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                 {mediaUrl ? (
                   isVideo ? (
                     <video
-                      src={mediaUrl}
-                      className="h-28 w-full rounded-lg object-cover"
-                    />
+  src={mediaUrl}
+  draggable={false}
+  className="h-28 w-full rounded-lg object-cover"
+/>
                   ) : (
                     <img
-                      src={mediaUrl}
-                      alt={
-                        mediaEdits[getMediaEditKey(item, index)]?.altText ||
-                        item?.altText ||
-                        item?.alt ||
-                        'media'
-                      }
-                      className="h-28 w-full rounded-lg object-cover"
-                    />
+  src={mediaUrl}
+  draggable={false}
+  alt={
+    mediaEdits[getMediaEditKey(item, index)]?.altText ||
+    item?.altText ||
+    item?.alt ||
+    'media'
+  }
+  className="h-28 w-full rounded-lg object-cover"
+/>
                   )
                 ) : (
                   <div className="flex h-28 items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-400">
@@ -4586,8 +4626,15 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
             {selectedMedia.map((item, index) => (
               <div
-                key={`${item.file.name}-${item.file.lastModified}-${index}`}
-                onDragOver={(e) => {
+              key={`${item.file.name}-${item.file.lastModified}-${index}`}
+              draggable
+              onDragStart={(e) => {
+                setSelectedMediaDragIndex(index);
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', String(index));
+              }}
+              onDragEnd={() => setSelectedMediaDragIndex(null)}
+              onDragOver={(e) => {
                   e.preventDefault();
                   e.currentTarget.classList.add('border-black', 'bg-gray-50');
                 }}
@@ -4613,20 +4660,14 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
               >
                 <div className="relative overflow-hidden rounded-xl bg-gray-50">
                   <div className="mb-2 flex items-center justify-between">
-                    <button
-                      type="button"
-                      draggable
-                      onDragStart={(e) => {
-                        setSelectedMediaDragIndex(index);
-                        e.dataTransfer.effectAllowed = 'move';
-                        e.dataTransfer.setData('text/plain', String(index));
-                      }}
-                      onDragEnd={() => setSelectedMediaDragIndex(null)}
-                      className="cursor-grab rounded-lg px-2 py-1 text-sm text-gray-400 hover:bg-gray-100 active:cursor-grabbing"
-                      title="Drag to reorder"
-                    >
-                      ⋮⋮
-                    </button>
+                  <button
+  type="button"
+  draggable={false}
+  className="pointer-events-none rounded-lg px-2 py-1 text-sm text-gray-400"
+  title="Drag to reorder"
+>
+  ⋮⋮
+</button>
 
                     <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-semibold text-gray-500">
                       #{index + 1}
