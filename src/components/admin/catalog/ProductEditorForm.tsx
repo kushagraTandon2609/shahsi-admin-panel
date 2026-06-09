@@ -240,8 +240,10 @@ const [productMetafields, setProductMetafields] = useState<
   careInstructions: initialProduct?.metafields?.careInstructions || initialProduct?.careInstructions || '',
   compositionOrigin: initialProduct?.metafields?.compositionOrigin || initialProduct?.compositionOrigin || '',
   customBadge: initialProduct?.metafields?.customBadge || initialProduct?.customBadge || '',
-  seeMoreFrom: initialProduct?.metafields?.seeMoreFrom || initialProduct?.seeMoreFrom || '',
-  primaryCollection: initialProduct?.metafields?.primaryCollection || initialProduct?.primaryCollection || '',
+  seeMoreFrom: normalizeMultipleMetafieldValue(
+    initialProduct?.metafields?.seeMoreFrom || initialProduct?.seeMoreFrom || [],
+  ),
+    primaryCollection: initialProduct?.metafields?.primaryCollection || initialProduct?.primaryCollection || '',
   secondaryCollection: initialProduct?.metafields?.secondaryCollection || initialProduct?.secondaryCollection || '',
   similarColorProducts: initialProduct?.metafields?.similarColorProducts || initialProduct?.similarColorProducts || [],
   matchWithAccessories: initialProduct?.metafields?.matchWithAccessories || initialProduct?.matchWithAccessories || [],
@@ -396,12 +398,19 @@ setOrganizationForm({
       careInstructions: initialProduct.careInstructions || [],
       compositionOrigin: initialProduct.compositionOrigin || [],
       customBadge: initialProduct.customBadge || '',
-      primaryCollection: initialProduct.primaryCollection
-        ? [initialProduct.primaryCollection]
-        : [],
-      secondaryCollection: initialProduct.secondaryCollection
-        ? [initialProduct.secondaryCollection]
-        : [],
+      seeMoreFrom: normalizeMultipleMetafieldValue(
+        initialProduct?.metafields?.seeMoreFrom || initialProduct?.seeMoreFrom || [],
+      ),
+      primaryCollection:
+  initialProduct?.metafields?.primaryCollection ||
+  initialProduct?.primaryCollection ||
+  initialProduct?.collection ||
+  '',
+
+secondaryCollection:
+  initialProduct?.metafields?.secondaryCollection ||
+  initialProduct?.secondaryCollection ||
+  '',
       similarColorProducts: initialProduct.similarColorProducts || [],
       matchWithAccessories: initialProduct.matchWithAccessories || [],
       completeTheLook: initialProduct.completeTheLook || [],
@@ -552,6 +561,27 @@ function normalizeProductPickerValue(value: any) {
     .split(',')
     .map((item) => item.trim())
     .filter(Boolean);
+}
+function normalizeSingleMetafieldValue(value: any) {
+  if (Array.isArray(value)) {
+    return String(value[0] || '').trim();
+  }
+
+  return String(value || '').trim();
+}
+function normalizeMultipleMetafieldValue(value: any) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function stringifyMultipleMetafieldValue(value: any) {
+  return normalizeMultipleMetafieldValue(value).join(', ');
 }
 
 function unwrapCatalogProducts(response: any) {
@@ -957,16 +987,37 @@ async function saveProductMetafields() {
  const similarColorProductIds = getSelectedIds('similarColorProducts');
  const matchWithAccessoryIds = getSelectedIds('matchWithAccessories');
  const completeTheLookIds = getSelectedIds('completeTheLook');
-const similarPrintProductIds = getSelectedIds('similarPrintProducts');
+ const similarPrintProductIds = getSelectedIds('similarPrintProducts');
 
-await adminCatalogService.updateProductMetafields(currentProductId, {
+ const primaryCollectionValue = normalizeSingleMetafieldValue(
+   productMetafields.primaryCollection,
+ );
+ 
+ const secondaryCollectionValue = normalizeSingleMetafieldValue(
+   productMetafields.secondaryCollection,
+ );
+
+ const seeMoreFromValue = stringifyMultipleMetafieldValue(
+  productMetafields.seeMoreFrom,
+);
+ 
+ await adminCatalogService.updateCollections(currentProductId, {
+   collection: primaryCollectionValue,
+   category: getPrimaryCategorySlug() || getSelectedCategorySlugs()[0] || '',
+   primaryCategory: getPrimaryCategorySlug() || getSelectedCategorySlugs()[0] || '',
+   primaryCollection: primaryCollectionValue,
+   secondaryCollection: secondaryCollectionValue,
+   categories: getSelectedCategorySlugs(),
+ });
+ 
+ await adminCatalogService.updateProductMetafields(currentProductId, {
   productFaqs: String(productMetafields.productFaqs || ''),
   careInstructions: String(productMetafields.careInstructions || ''),
   compositionOrigin: String(productMetafields.compositionOrigin || ''),
   customBadge: String(productMetafields.customBadge || ''),
-  seeMoreFrom: String(productMetafields.seeMoreFrom || ''),
-  primaryCollection: String(productMetafields.primaryCollection || ''),
-  secondaryCollection: String(productMetafields.secondaryCollection || ''),
+  seeMoreFrom: seeMoreFromValue,
+   primaryCollection: primaryCollectionValue,
+secondaryCollection: secondaryCollectionValue,
   similarColorProducts: similarColorProductIds,
   matchWithAccessories: matchWithAccessoryIds,
   completeTheLook: completeTheLookIds,
@@ -1857,9 +1908,19 @@ async function reloadProduct(id: string) {
         careInstructions: savedMetafields.careInstructions || '',
         compositionOrigin: savedMetafields.compositionOrigin || '',
         customBadge: savedMetafields.customBadge || '',
-        seeMoreFrom: savedMetafields.seeMoreFrom || '',
-        primaryCollection: savedMetafields.primaryCollection || '',
-        secondaryCollection: savedMetafields.secondaryCollection || '',
+        seeMoreFrom: normalizeMultipleMetafieldValue(
+          savedMetafields.seeMoreFrom || detail?.seeMoreFrom || [],
+        ),
+        primaryCollection:
+  savedMetafields.primaryCollection ||
+  detail?.primaryCollection ||
+  detail?.collection ||
+  '',
+
+secondaryCollection:
+  savedMetafields.secondaryCollection ||
+  detail?.secondaryCollection ||
+  '',
         similarColorProducts: similarColorProductIds,
         matchWithAccessories: matchWithAccessoryIds,
         completeTheLook: completeTheLookIds,
@@ -2102,6 +2163,16 @@ const primarySlug = getPrimaryCategorySlug(
   selectedCategoryIdsSnapshot,
   primaryCategoryIdSnapshot,
 );
+const primaryCollectionValue = normalizeSingleMetafieldValue(
+  productMetafields.primaryCollection,
+);
+
+const secondaryCollectionValue = normalizeSingleMetafieldValue(
+  productMetafields.secondaryCollection,
+);
+const seeMoreFromValue = stringifyMultipleMetafieldValue(
+  productMetafields.seeMoreFrom,
+);
     const selectedPrimarySlug =
       primarySlug || categorySlugs[0] || organizationForm.category || '';
 
@@ -2130,8 +2201,8 @@ const primarySlug = getPrimaryCategorySlug(
         print: String(productMetafields.print || ''),
         badge: String(productMetafields.customBadge || ''),
       
-        primaryCollection: '',
-        secondaryCollection: '',
+        primaryCollection: primaryCollectionValue,
+secondaryCollection: secondaryCollectionValue,
         categories: categorySlugs,
         tags,
         careInstructions: Array.isArray(productMetafields.careInstructions)
@@ -2277,11 +2348,11 @@ const primarySlug = getPrimaryCategorySlug(
     setProduct(createdProduct || created);
     if (categorySlugs.length > 0 || selectedPrimarySlug) {
       await adminCatalogService.updateCollections(id, {
-        collection: '',
+        collection: primaryCollectionValue,
         category: selectedPrimarySlug || categorySlugs[0] || '',
         primaryCategory: selectedPrimarySlug || categorySlugs[0] || '',
-        primaryCollection: '',
-        secondaryCollection: '',
+        primaryCollection: primaryCollectionValue,
+        secondaryCollection: secondaryCollectionValue,
         categories: categorySlugs,
       });
       setLastSavedCategoryIds(selectedCategoryIdsSnapshot);
@@ -2310,9 +2381,9 @@ setPrimaryCategoryId(primaryCategoryIdSnapshot);
       careInstructions: String(productMetafields.careInstructions || ''),
       compositionOrigin: String(productMetafields.compositionOrigin || ''),
       customBadge: String(productMetafields.customBadge || ''),
-      seeMoreFrom: String(productMetafields.seeMoreFrom || ''),
-      primaryCollection: String(productMetafields.primaryCollection || ''),
-      secondaryCollection: String(productMetafields.secondaryCollection || ''),
+      seeMoreFrom: seeMoreFromValue,
+      primaryCollection: primaryCollectionValue,
+secondaryCollection: secondaryCollectionValue,
       similarColorProducts: Array.isArray(productMetafields.similarColorProducts)
         ? productMetafields.similarColorProducts
         : [],
@@ -2391,6 +2462,17 @@ async function saveAllChanges(e?: FormEvent) {
 const primarySlug = getPrimaryCategorySlug(selectedIdsSnapshot, primaryIdSnapshot);
 const selectedPrimarySlug = primarySlug || categorySlugs[0] || '';
 
+const primaryCollectionValue = normalizeSingleMetafieldValue(
+  productMetafields.primaryCollection,
+);
+
+const secondaryCollectionValue = normalizeSingleMetafieldValue(
+  productMetafields.secondaryCollection,
+);
+const seeMoreFromValue = stringifyMultipleMetafieldValue(
+  productMetafields.seeMoreFrom,
+);
+
     const tags = organizationForm.tags
       .split(',')
       .map((item: string) => item.trim())
@@ -2444,11 +2526,11 @@ const selectedPrimarySlug = primarySlug || categorySlugs[0] || '';
     });
 
     await adminCatalogService.updateCollections(currentProductId, {
-      collection: '',
+      collection: primaryCollectionValue,
       category: selectedPrimarySlug,
       primaryCategory: selectedPrimarySlug,
-      primaryCollection: '',
-      secondaryCollection: '',
+      primaryCollection: primaryCollectionValue,
+      secondaryCollection: secondaryCollectionValue,
       categories: categorySlugs,
     });
     setLastSavedCategoryIds(selectedIdsSnapshot);
@@ -2475,9 +2557,9 @@ const selectedPrimarySlug = primarySlug || categorySlugs[0] || '';
       careInstructions: String(productMetafields.careInstructions || ''),
       compositionOrigin: String(productMetafields.compositionOrigin || ''),
       customBadge: String(productMetafields.customBadge || ''),
-      seeMoreFrom: String(productMetafields.seeMoreFrom || ''),
-      primaryCollection: String(productMetafields.primaryCollection || ''),
-      secondaryCollection: String(productMetafields.secondaryCollection || ''),
+      seeMoreFrom: seeMoreFromValue,
+      primaryCollection: primaryCollectionValue,
+secondaryCollection: secondaryCollectionValue,
       similarColorProducts: Array.isArray(productMetafields.similarColorProducts)
         ? productMetafields.similarColorProducts
         : [],
@@ -4123,12 +4205,14 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
           />
 
 
-     <ProductMetafieldsEditor
- initialValues={productMetafields}
- onChange={setProductMetafields}
- currentProductId={currentProductId}
- selectedMetafieldProducts={selectedMetafieldProducts}
- onBrowseProducts={(field: string) =>
+<ProductMetafieldsEditor
+  initialValues={productMetafields}
+  onChange={setProductMetafields}
+  currentProductId={currentProductId}
+  categoryTree={categoryTree}
+  onAddCategory={addCategoryFromProductEditor}
+  selectedMetafieldProducts={selectedMetafieldProducts}
+  onBrowseProducts={(field: string) =>
     openProductMetafieldPicker(field as ProductPickerMetafield)
   }
   onRemoveProduct={(field: string, id: string) =>

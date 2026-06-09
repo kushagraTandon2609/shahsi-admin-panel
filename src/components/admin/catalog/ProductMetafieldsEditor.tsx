@@ -9,6 +9,8 @@ type ProductMetafieldsEditorProps = {
   initialValues?: Record<string, string | string[]>;
   onChange?: (values: Record<string, string | string[]>) => void;
   currentProductId?: string;
+  categoryTree?: any[];
+  onAddCategory?: (payload: { name: string; parentId?: string }) => Promise<void> | void;
   selectedMetafieldProducts?: Record<string, any[]>;
   onBrowseProducts?: (field: string) => void;
   onRemoveProduct?: (field: string, productId: string) => void;
@@ -17,7 +19,7 @@ type ProductMetafieldsEditorProps = {
 type FieldConfig = {
   key: string;
   label: string;
-  type?: 'text' | 'tags' | 'product-picker';
+  type?: 'text' | 'tags' | 'product-picker' | 'collection-picker' | 'multi-collection-picker';
 };
 
 const PRODUCT_METAFIELDS: FieldConfig[] = [
@@ -42,20 +44,20 @@ const PRODUCT_METAFIELDS: FieldConfig[] = [
     type: 'text',
   },
   {
-  key: 'seeMoreFrom',
-  label: 'See More From',
-  type: 'text',
+    key: 'seeMoreFrom',
+    label: 'See more from',
+    type: 'multi-collection-picker',
+  },
+{
+  key: 'primaryCollection',
+  label: 'Primary collection',
+  type: 'collection-picker',
 },
-  {
-    key: 'primaryCollection',
-    label: 'Primary collection',
-    type: 'text',
-  },
-  {
-    key: 'secondaryCollection',
-    label: 'Secondary collection',
-    type: 'text',
-  },
+{
+  key: 'secondaryCollection',
+  label: 'Secondary collection',
+  type: 'collection-picker',
+},
   {
   key: 'similarColorProducts',
   label: 'Similar Color Products',
@@ -211,6 +213,70 @@ function getProductTags(product: any) {
   return String(product?.tags || '');
 }
 
+function getCollectionNameFromItem(category: any) {
+  return String(
+    category?.name ||
+      category?.title ||
+      category?.label ||
+      category?.slug ||
+      category?.handle ||
+      '',
+  ).trim();
+}
+
+function getCollectionIdFromItem(category: any, index?: number) {
+  return String(
+    category?.id ||
+      category?._id ||
+      category?.categoryId ||
+      category?.slug ||
+      category?.handle ||
+      category?.name ||
+      index ||
+      '',
+  ).trim();
+}
+
+function getCollectionChildrenFromItem(category: any) {
+  const children =
+    category?.children ||
+    category?.subcategories ||
+    category?.items ||
+    category?.nodes ||
+    [];
+
+  return Array.isArray(children) ? children : [];
+}
+
+function flattenCollectionTree(categories: any[] = []) {
+  const output: any[] = [];
+
+  function walk(items: any[], level = 0) {
+    items.forEach((item, index) => {
+      const id = getCollectionIdFromItem(item, index);
+      const name = getCollectionNameFromItem(item);
+
+      if (name) {
+        output.push({
+          ...item,
+          __id: id,
+          __name: name,
+          __level: level,
+        });
+      }
+
+      const children = getCollectionChildrenFromItem(item);
+
+      if (children.length > 0) {
+        walk(children, level + 1);
+      }
+    });
+  }
+
+  walk(categories);
+  return output;
+}
+
 function productMatchesFilter(product: any, query: string, filter: string) {
   const cleanQuery = query.toLowerCase().trim();
 
@@ -240,6 +306,8 @@ export function ProductMetafieldsEditor({
   initialValues,
   onChange,
   currentProductId,
+  categoryTree = [],
+  onAddCategory,
   selectedMetafieldProducts,
   onBrowseProducts,
   onRemoveProduct,
@@ -277,6 +345,36 @@ const [draggedSimilarProductId, setDraggedSimilarProductId] = useState('');
   const pickerLimit = 50;
 
   const [pickerLoaded, setPickerLoaded] = useState(false);
+  const [activeCollectionField, setActiveCollectionField] = useState<string>('');
+  const [collectionSearch, setCollectionSearch] = useState('');
+  
+
+  const collectionOptions = useMemo(() => {
+    const flat = flattenCollectionTree(categoryTree);
+
+    const uniqueMap = new Map<string, any>();
+
+    flat.forEach((item) => {
+      const name = String(item.__name || '').trim();
+      const key = name.toLowerCase();
+
+      if (name && !uniqueMap.has(key)) {
+        uniqueMap.set(key, item);
+      }
+    });
+
+    return Array.from(uniqueMap.values());
+  }, [categoryTree]);
+
+  const filteredCollectionOptions = useMemo(() => {
+    const query = collectionSearch.toLowerCase().trim();
+
+    if (!query) return collectionOptions;
+
+    return collectionOptions.filter((item) =>
+      String(item.__name || '').toLowerCase().includes(query),
+    );
+  }, [collectionOptions, collectionSearch]);
 
   const displayPickerProducts = pickerProducts;
 
@@ -470,6 +568,338 @@ function removeProductFromField(fieldKey: string, productId: string) {
     ...values,
     [fieldKey]: currentIds.filter((id) => id !== productId),
   });
+}
+
+function selectCollectionValue(fieldKey: string, value: string) {
+  emit({
+    ...values,
+    [fieldKey]: value,
+  });
+
+  setActiveCollectionField('');
+  setCollectionSearch('');
+}
+
+function clearCollectionValue(fieldKey: string) {
+  emit({
+    ...values,
+    [fieldKey]: '',
+  });
+
+  setActiveCollectionField('');
+  setCollectionSearch('');
+}
+
+
+
+function renderCollectionPickerField(fieldKey: string, label: string) {
+  const selectedValue = String(values[fieldKey] || '').trim();
+  const isOpen = activeCollectionField === fieldKey;
+
+  return (
+    <div className="relative">
+      <div className="flex min-h-11 items-center gap-2 rounded-xl border border-gray-300 bg-white px-2 py-1.5 shadow-sm">
+        {selectedValue ? (
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <ImageIcon size={15} className="shrink-0 text-gray-500" />
+
+            <span className="truncate rounded-md bg-gray-100 px-2 py-1 text-sm text-gray-800">
+              {selectedValue}
+            </span>
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveCollectionField(fieldKey);
+              setCollectionSearch('');
+            }}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50"
+          >
+            Select collection
+          </button>
+        )}
+
+        {selectedValue ? (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveCollectionField(fieldKey);
+                setCollectionSearch('');
+              }}
+              className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50"
+            >
+              Change
+            </button>
+
+            <button
+              type="button"
+              onClick={() => clearCollectionValue(fieldKey)}
+              className="text-sm font-medium text-blue-600 hover:underline"
+            >
+              Clear
+            </button>
+          </>
+        ) : null}
+      </div>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full z-50 mt-2 w-full max-w-xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
+          <div className="border-b border-gray-200 p-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+              <input
+                autoFocus
+                value={collectionSearch}
+                onChange={(e) => setCollectionSearch(e.target.value)}
+                placeholder="Find collections"
+                className="h-11 w-full rounded-xl border border-gray-300 pl-10 pr-3 text-sm outline-none focus:border-black"
+              />
+            </div>
+          </div>
+
+          <div className="max-h-80 overflow-y-auto py-2">
+            {filteredCollectionOptions.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-gray-500">
+                No collections found.
+              </p>
+            ) : (
+              filteredCollectionOptions.map((item) => {
+                const name = String(item.__name || '').trim();
+                const level = Number(item.__level || 0);
+
+                return (
+                  <button
+                    key={`${item.__id}-${name}`}
+                    type="button"
+                    onClick={() => selectCollectionValue(fieldKey, name)}
+                    className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-gray-50 ${
+                      selectedValue === name ? 'bg-gray-100' : ''
+                    }`}
+                    style={{
+                      paddingLeft: `${16 + level * 18}px`,
+                    }}
+                  >
+                    <ImageIcon size={16} className="shrink-0 text-gray-400" />
+
+                    <span className="min-w-0 flex-1 truncate text-gray-900">
+                      {name}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div className="border-t border-gray-200 bg-gray-50 p-3 text-right">
+  <button
+    type="button"
+    onClick={() => {
+      setActiveCollectionField('');
+      setCollectionSearch('');
+    }}
+    className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+  >
+    Done
+  </button>
+</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function normalizeMultiCollectionValue(value: any) {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || '').trim()).filter(Boolean);
+  }
+
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function toggleMultiCollectionValue(fieldKey: string, value: string) {
+  const selectedValues = normalizeMultiCollectionValue(values[fieldKey]);
+
+  const nextValues = selectedValues.includes(value)
+    ? selectedValues.filter((item) => item !== value)
+    : [...selectedValues, value];
+
+  emit({
+    ...values,
+    [fieldKey]: nextValues,
+  });
+}
+
+function removeMultiCollectionValue(fieldKey: string, value: string) {
+  const selectedValues = normalizeMultiCollectionValue(values[fieldKey]);
+
+  emit({
+    ...values,
+    [fieldKey]: selectedValues.filter((item) => item !== value),
+  });
+}
+
+function clearMultiCollectionValue(fieldKey: string) {
+  emit({
+    ...values,
+    [fieldKey]: [],
+  });
+
+  setActiveCollectionField('');
+  setCollectionSearch('');
+  
+}
+
+
+
+function renderMultiCollectionPickerField(fieldKey: string, label: string) {
+  const selectedValues = normalizeMultiCollectionValue(values[fieldKey]);
+  const isOpen = activeCollectionField === fieldKey;
+
+  return (
+    <div className="relative">
+      <div className="flex min-h-11 items-center gap-2 rounded-xl border border-gray-300 bg-white px-2 py-1.5 shadow-sm">
+        {selectedValues.length > 0 ? (
+          <div className="flex min-w-0 flex-1 flex-wrap gap-2">
+            {selectedValues.map((value) => (
+              <span
+                key={value}
+                className="inline-flex max-w-full items-center gap-2 rounded-md bg-gray-100 px-2 py-1 text-sm text-gray-800"
+              >
+                <ImageIcon size={14} className="shrink-0 text-gray-500" />
+
+                <span className="truncate">{value}</span>
+
+                <button
+                  type="button"
+                  onClick={() => removeMultiCollectionValue(fieldKey, value)}
+                  className="shrink-0 text-gray-500 hover:text-red-600"
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => {
+              setActiveCollectionField(fieldKey);
+              setCollectionSearch('');
+            }}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50"
+          >
+            Select collections
+          </button>
+        )}
+
+        {selectedValues.length > 0 ? (
+          <>
+            <button
+              type="button"
+              onClick={() => {
+                setActiveCollectionField(fieldKey);
+                setCollectionSearch('');
+              }}
+              className="shrink-0 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm font-medium text-gray-800 hover:bg-gray-50"
+            >
+              Change
+            </button>
+
+            <button
+              type="button"
+              onClick={() => clearMultiCollectionValue(fieldKey)}
+              className="shrink-0 text-sm font-medium text-blue-600 hover:underline"
+            >
+              Clear
+            </button>
+          </>
+        ) : null}
+      </div>
+
+      {isOpen && (
+        <div className="absolute left-0 top-full z-50 mt-2 w-full max-w-xl overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl">
+          <div className="border-b border-gray-200 p-3">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+
+              <input
+                autoFocus
+                value={collectionSearch}
+                onChange={(e) => setCollectionSearch(e.target.value)}
+                placeholder="Find collections"
+                className="h-11 w-full rounded-xl border border-gray-300 pl-10 pr-3 text-sm outline-none focus:border-black"
+              />
+            </div>
+          </div>
+
+          <div className="max-h-80 overflow-y-auto py-2">
+            {filteredCollectionOptions.length === 0 ? (
+              <p className="px-4 py-6 text-center text-sm text-gray-500">
+                No collections found.
+              </p>
+            ) : (
+              filteredCollectionOptions.map((item) => {
+                const name = String(item.__name || '').trim();
+                const level = Number(item.__level || 0);
+                const checked = selectedValues.includes(name);
+
+                return (
+                  <button
+                    key={`${item.__id}-${name}`}
+                    type="button"
+                    onClick={() => toggleMultiCollectionValue(fieldKey, name)}
+                    className={`flex w-full items-center gap-3 px-4 py-2 text-left text-sm hover:bg-gray-50 ${
+                      checked ? 'bg-gray-100' : ''
+                    }`}
+                    style={{
+                      paddingLeft: `${16 + level * 18}px`,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      readOnly
+                      className="h-4 w-4"
+                    />
+
+                    <ImageIcon size={16} className="shrink-0 text-gray-400" />
+
+                    <span className="min-w-0 flex-1 truncate text-gray-900">
+                      {name}
+                    </span>
+                  </button>
+                );
+              })
+            )}
+          </div>
+
+          <div className="flex items-center justify-between border-t border-gray-200 bg-gray-50 p-3">
+            <p className="text-sm text-gray-500">
+              {selectedValues.length} selected
+            </p>
+
+            <button
+              type="button"
+              onClick={() => {
+                setActiveCollectionField('');
+                setCollectionSearch('');
+                
+              }}
+              className="rounded-lg bg-black px-4 py-2 text-sm font-semibold text-white hover:bg-gray-800"
+            >
+              Done
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function renderProductPickerField(fieldKey: string, label = 'items') {
@@ -738,10 +1168,12 @@ function renderProductPickerField(fieldKey: string, label = 'items') {
         </div>
 
         <div className="space-y-3 p-5">
-          {PRODUCT_METAFIELDS.map((field) => {
-            const isTags = field.type === 'tags';
-            const isProductPicker = field.type === 'product-picker';
-            const tags = normalizeTags(values[field.key]);
+        {PRODUCT_METAFIELDS.map((field) => {
+  const isTags = field.type === 'tags';
+  const isProductPicker = field.type === 'product-picker';
+  const isCollectionPicker = field.type === 'collection-picker';
+  const isMultiCollectionPicker = field.type === 'multi-collection-picker';
+  const tags = normalizeTags(values[field.key]);
 
             return (
               <div
@@ -752,9 +1184,13 @@ function renderProductPickerField(fieldKey: string, label = 'items') {
                   {field.label}
                 </label>
 
-                {isProductPicker ? (
-                  renderProductPickerField(field.key, field.label)
-                ) : isTags ? (
+                {isMultiCollectionPicker ? (
+  renderMultiCollectionPickerField(field.key, field.label)
+) : isCollectionPicker ? (
+  renderCollectionPickerField(field.key, field.label)
+) : isProductPicker ? (
+  renderProductPickerField(field.key, field.label)
+) : isTags ? (
                   <div className="min-h-11 rounded-xl border border-gray-300 bg-white px-2 py-1.5 shadow-sm transition focus-within:border-black focus-within:ring-4 focus-within:ring-black/10">
                     <div className="flex flex-wrap items-center gap-1.5">
                       {tags.map((tag) => (
