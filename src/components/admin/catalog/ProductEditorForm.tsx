@@ -2621,17 +2621,19 @@ const seeMoreFromValue = stringifyMultipleMetafieldValue(
       .map((item: string) => item.trim())
       .filter(Boolean);
 
-    await adminCatalogService.updateBasicInfo(currentProductId, {
-      title: basicForm.title,
-      description: basicForm.description,
-      shortDescription: stripHtml(basicForm.description).slice(0, 180),
-      category: selectedPrimarySlug || organizationForm.category || '',
-      productType: organizationForm.productType || '',
-      vendor: organizationForm.vendor || '',
-      color: '',
-      fabric: String(productMetafields.fabric || ''),
-      occasion: '',
-    });
+      await adminCatalogService.updateBasicInfo(currentProductId, {
+        title: basicForm.title,
+        
+        sku: basicForm.sku || '',
+        description: basicForm.description,
+        shortDescription: stripHtml(basicForm.description).slice(0, 180),
+        category: selectedPrimarySlug || organizationForm.category || '',
+        productType: organizationForm.productType || '',
+        vendor: organizationForm.vendor || '',
+        color: '',
+        fabric: String(productMetafields.fabric || ''),
+        occasion: '',
+      });
 
     await adminCatalogService.updatePricing(currentProductId, {
       basePrice: Number(pricingForm.price || 0),
@@ -2768,20 +2770,19 @@ async function saveBasic(e?: FormEvent) {
 
   try {
     await adminCatalogService.updateBasicInfo(currentProductId, {
-  title: basicForm.title,
-  description: basicForm.description,
-  shortDescription: stripHtml(basicForm.description).slice(0, 180),
-  category: organizationForm.category || '',
+      title: basicForm.title,
+    
+      sku: basicForm.sku || '',
+      description: basicForm.description,
+      shortDescription: stripHtml(basicForm.description).slice(0, 180),
+      category: organizationForm.category || '',
+      productType: organizationForm.productType || '',
+      vendor: organizationForm.vendor || '',
+      color: '',
+      fabric: String(productMetafields.fabric || ''),
+      occasion: '',
+    });
 
-  productType: organizationForm.productType || '',
-
-
-  vendor: organizationForm.vendor || '',
-
-  color: '',
-  fabric: String(productMetafields.fabric || ''),
-  occasion: '',
-});
 await reloadProduct(currentProductId);
     await onReload?.();
   } catch (err: any) {
@@ -2907,16 +2908,13 @@ const primaryIdSnapshot = primaryCategoryId;
     await Promise.allSettled([
   adminCatalogService.updateBasicInfo(currentProductId, {
   title: basicForm.title,
+
+  sku: basicForm.sku || '',
   description: basicForm.description,
   shortDescription: stripHtml(basicForm.description).slice(0, 180),
-
   category: organizationForm.category || '',
-
   productType: organizationForm.productType || '',
- 
-
   vendor: organizationForm.vendor || '',
-
 }),
   adminCatalogService.updateTags(currentProductId, {
     tags: organizationForm.tags

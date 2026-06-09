@@ -341,10 +341,10 @@ export const adminCatalogService = {
   // =====================================================
 
   updateBasicInfo: async (id: string, payload: any) => {
-  const res = await api.patch(
-    `/admin/catalog/${encodeURIComponent(id)}/basic-info`,
-    {
+    const res = await api.patch(`/catalog/${encodeURIComponent(id)}`, {
       title: payload.title || '',
+      
+      sku: payload.sku || '',
       description: payload.description || '',
       shortDescription: payload.shortDescription || '',
       category: payload.category || '',
@@ -354,11 +354,10 @@ export const adminCatalogService = {
       color: payload.color || '',
       fabric: payload.fabric || '',
       occasion: payload.occasion || '',
-    },
-  );
-
-  return res.data;
-},
+    });
+  
+    return res.data;
+  },
 
   updateCommerceSettings: async (id: string, payload: any) => {
     const res = await api.patch(
