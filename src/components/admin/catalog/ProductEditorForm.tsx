@@ -4491,10 +4491,21 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
               }`}
             >
             {getSelectedMediaType(item) === 'video' ? (
-  <CompactVideoThumbnail
-    thumbnailUrl={getSelectedMediaThumbnailUrl(item)}
-    label={item.name || item.altText || 'Video'}
-  />
+  item.sourceType === 'url' ? (
+    <CompactVideoThumbnail
+      thumbnailUrl={getSelectedMediaThumbnailUrl(item)}
+      label={item.name || item.altText || 'Video'}
+    />
+  ) : (
+    <video
+      src={item.previewUrl}
+      draggable={false}
+      muted
+      playsInline
+      preload="metadata"
+      className="h-28 w-full rounded-lg object-cover"
+    />
+  )
 ) : (
   <img
     src={item.previewUrl}
@@ -5152,11 +5163,22 @@ const isVideo = getSelectedMediaType(item) === 'video';
                   </div>
 
                   {getSelectedMediaType(item) === 'video' ? (
-  <CompactVideoThumbnail
-    thumbnailUrl={getSelectedMediaThumbnailUrl(item)}
-    label={item.name || item.altText || 'Video'}
-    className="h-32"
-  />
+  item.sourceType === 'url' ? (
+    <CompactVideoThumbnail
+      thumbnailUrl={getSelectedMediaThumbnailUrl(item)}
+      label={item.name || item.altText || 'Video'}
+      className="h-32"
+    />
+  ) : (
+    <video
+      src={item.previewUrl}
+      draggable={false}
+      muted
+      playsInline
+      preload="metadata"
+      className="h-32 w-full object-cover"
+    />
+  )
 ) : (
   <img
     src={item.previewUrl}
