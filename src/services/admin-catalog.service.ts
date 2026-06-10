@@ -347,24 +347,15 @@ export const adminCatalogService = {
   // ADMIN PRODUCT SECTION UPDATE APIs
   // =====================================================
 
-  updateBasicInfo: async (id: string, payload: any) => {
-    const res = await api.patch(`/catalog/${encodeURIComponent(id)}`, {
-      title: payload.title || '',
-      
-      sku: payload.sku || '',
-      description: payload.description || '',
-      shortDescription: payload.shortDescription || '',
-      category: payload.category || '',
-      productType: payload.productType || '',
-      brand: payload.brand || '',
-      vendor: payload.vendor || '',
-      color: payload.color || '',
-      fabric: payload.fabric || '',
-      occasion: payload.occasion || '',
-    });
-  
-    return res.data;
-  },
+ updateBasicInfo: async (id: string, payload: any) => {
+  const cleanPayload = Object.fromEntries(
+    Object.entries(payload).filter(([, value]) => value !== undefined),
+  );
+
+  const res = await api.patch(`/catalog/${encodeURIComponent(id)}`, cleanPayload);
+
+  return res.data;
+},
 
   updateCommerceSettings: async (id: string, payload: any) => {
     const res = await api.patch(

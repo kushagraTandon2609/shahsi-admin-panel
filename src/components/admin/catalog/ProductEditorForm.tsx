@@ -2632,54 +2632,133 @@ const seeMoreFromValue = stringifyMultipleMetafieldValue(
       .map((item: string) => item.trim())
       .filter(Boolean);
 
-      await adminCatalogService.updateBasicInfo(currentProductId, {
-        title: basicForm.title,
-        
-        sku: basicForm.sku || '',
-        description: basicForm.description,
-        shortDescription: stripHtml(basicForm.description).slice(0, 180),
-        category: selectedPrimarySlug || organizationForm.category || '',
-        productType: organizationForm.productType || '',
-        vendor: organizationForm.vendor || '',
-        color: '',
-        fabric: String(productMetafields.fabric || ''),
-        occasion: '',
-      });
+     const fullPatchPayload = {
+  title: basicForm.title.trim(),
+  description: basicForm.description || '',
+  shortDescription: stripHtml(basicForm.description || '').slice(0, 180),
+  slug: cleanUrlHandle,
+  sku: basicForm.sku || '',
+  mode: 'retail',
 
-    await adminCatalogService.updatePricing(currentProductId, {
-      basePrice: Number(pricingForm.price || 0),
-      compareAtPrice: Number(pricingForm.compareAtPrice || 0),
-      discountPercent: 0,
-      currency: 'USD',
-      rentalPrice: Number(pricingForm.rentalPrice || 0),
-      resalePrice: 0,
-      listingPrice: Number(pricingForm.price || 0),
-      minOfferPrice: 0,
-    });
+  productType: organizationForm.productType || '',
+  category: selectedPrimarySlug || organizationForm.category || '',
+  brand: '',
+  vendor: organizationForm.vendor || '',
+  color: '',
+  fabric: String(productMetafields.fabric || ''),
+  occasion: '',
+  composition: '',
+  style: String(productMetafields.style || ''),
+  print: String(productMetafields.print || ''),
+  badge: String(productMetafields.customBadge || ''),
 
-    await adminCatalogService.updateStatus(currentProductId, {
-      status: normalizeStatus(availabilityForm.status),
-      publishedAt:
-        normalizeStatus(availabilityForm.status) === 'ACTIVE'
-          ? new Date().toISOString()
-          : null,
-    });
+  primaryCollection: primaryCollectionValue,
+  secondaryCollection: secondaryCollectionValue,
+  categories: categorySlugs,
+  tags,
 
-    await adminCatalogService.updateAvailability(currentProductId, {
-      availabilityStatus:
-        availabilityForm.isAvailable === 'false' ? 'out_of_stock' : 'in_stock',
-      availabilityLabel:
-        availabilityForm.isAvailable === 'false' ? 'Out of stock' : 'In stock',
-      lowStockThreshold: Number(availabilityForm.stock || 3),
-      pickupAvailable: true,
-      shippingAvailable: true,
-    });
+  careInstructions: Array.isArray(productMetafields.careInstructions)
+    ? productMetafields.careInstructions
+    : String(productMetafields.careInstructions || '')
+        .split(',')
+        .map((item) => item.trim())
+        .filter(Boolean),
 
-    await adminCatalogService.updateTags(currentProductId, {
-      tags,
-      occasionTags: [],
-      metaKeywords: [],
-    });
+  highlights: [],
+  serviceHighlights: {},
+  materialDetails: '',
+  fitDetails: '',
+  modelInfo: '',
+  warrantyText: '',
+  authenticityText: '',
+
+  basePrice: Number(pricingForm.price || 0),
+  compareAtPrice: Number(pricingForm.compareAtPrice || 0),
+  discountPercent: 0,
+  currency: 'USD',
+
+  productionType: 'READY_STOCK',
+  isMadeToOrder: false,
+  allowCustomSizing: true,
+  allowRushProduction: false,
+  standardLeadTimeDays: 21,
+  rushLeadTimeDays: 0,
+  rushFee: 0,
+  customSizingFinalSale: false,
+
+  availabilityStatus:
+    availabilityForm.isAvailable === 'false' ? 'out_of_stock' : 'in_stock',
+  availabilityLabel:
+    availabilityForm.isAvailable === 'false' ? 'Out of stock' : 'In stock',
+  lowStockThreshold: Number(availabilityForm.stock || 3),
+
+  pickupAvailable: false,
+  shippingAvailable: true,
+  pickupReadyIn: '',
+  returnWindowDays: 14,
+  returnText: '',
+  isFinalSale: false,
+
+  storeName: '',
+  storeLocation: '',
+  storeAddress: '',
+  storePickupAvailable: false,
+
+  tabDescription: '',
+  tabCompositionCare: '',
+  tabShippingReturns: '',
+  tabReturnPolicies: '',
+
+  reviewsAverage: 0,
+  reviewsTotal: 0,
+  review5Count: 0,
+  review4Count: 0,
+  review3Count: 0,
+  review2Count: 0,
+  review1Count: 0,
+
+  sizeGuideUnit: 'inches',
+  paymentMethods: [],
+
+  seoTitle: seoForm.metaTitle || basicForm.title.trim(),
+  seoDescription:
+    seoForm.metaDescription ||
+    stripHtml(basicForm.description || '').slice(0, 160),
+  metaKeywords: [],
+
+  printSwatch: String(productMetafields.printSwatch || ''),
+
+  availableForSubscription: false,
+  availableForDailyRent: commerceForm.isRentalEnabled === 'true',
+  rentalCondition: '',
+  cleaningBufferDays: 2,
+  sellerId: '',
+  eventType: '',
+  sizeLabel: '',
+  rentalPrice: Number(pricingForm.rentalPrice || 0),
+  resalePrice: 0,
+
+  isRentable: commerceForm.isRentalEnabled === 'true',
+  isSellable: commerceForm.isShopEnabled === 'true',
+
+  city: '',
+  state: '',
+  zipCode: '',
+  latitude: 0,
+  longitude: 0,
+
+  listingType: 'RESALE',
+  originalPrice: 0,
+  listingPrice: Number(pricingForm.price || 0),
+  allowOffers: true,
+  minOfferPrice: 0,
+  occasionTags: [],
+  resaleColors: [],
+  conditionPhotoUrls: [],
+
+};
+
+await adminCatalogService.updateBasicInfo(currentProductId, fullPatchPayload);
 
     await adminCatalogService.updateCollections(currentProductId, {
       collection: primaryCollectionValue,
@@ -2691,22 +2770,6 @@ const seeMoreFromValue = stringifyMultipleMetafieldValue(
     });
     setLastSavedCategoryIds(selectedIdsSnapshot);
     setLastSavedPrimaryCategoryId(primaryIdSnapshot);
-    await adminCatalogService.updateSeo(currentProductId, {
-      seoTitle: seoForm.metaTitle,
-      seoDescription: seoForm.metaDescription,
-      slug: cleanUrlHandle,
-      metaKeywords: [],
-    });
-
-    await adminCatalogService.updateCommerceSettings(currentProductId, {
-      isSellable: commerceForm.isShopEnabled === 'true',
-      isRentable: commerceForm.isRentalEnabled === 'true',
-      availableForDailyRent: commerceForm.isRentalEnabled === 'true',
-      availableForSubscription: false,
-      isMadeToOrder: false,
-      allowCustomSizing: true,
-      allowRushProduction: false,
-    });
 
     await adminCatalogService.updateProductMetafields(currentProductId, {
       productFaqs: String(productMetafields.productFaqs || ''),
