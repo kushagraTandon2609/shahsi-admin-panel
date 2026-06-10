@@ -123,6 +123,13 @@ export const adminCatalogService = {
     const res = await api.patch(`/catalog/${encodeURIComponent(id)}`, payload);
     return res.data;
   },
+  saveProductMediaUrls: async (id: string, images: any[]) => {
+  const res = await api.patch(`/catalog/${encodeURIComponent(id)}`, {
+    images,
+  });
+
+  return res.data;
+},
 
   delete: async (id: string) => {
     const res = await api.delete(`/catalog/${encodeURIComponent(id)}`);

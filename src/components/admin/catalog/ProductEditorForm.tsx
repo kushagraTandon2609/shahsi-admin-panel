@@ -16,10 +16,13 @@ import { adminCatalogService } from '@/services/admin-catalog.service';
 import { getApiErrorMessage, unwrapList, unwrapObject } from '@/lib/admin-response';
 
 type SelectedMedia = {
-  file: File;
+  file?: File;
   previewUrl: string;
   name: string;
   altText: string;
+  sourceType?: 'file' | 'url';
+  url?: string;
+  mediaType?: 'image' | 'video';
 };
 
 type ProductEditorFormProps = {
@@ -222,6 +225,11 @@ const [primaryCategoryId, setPrimaryCategoryId] = useState<string>(
 );
 
 const [showMediaPicker, setShowMediaPicker] = useState(false);
+const [showMediaUrlForm, setShowMediaUrlForm] = useState(false);
+const [mediaUrlInput, setMediaUrlInput] = useState('');
+const [mediaUrlName, setMediaUrlName] = useState('');
+const [mediaUrlAltText, setMediaUrlAltText] = useState('');
+const [mediaUrlError, setMediaUrlError] = useState('');
 const [activeMediaIndex, setActiveMediaIndex] = useState<number | null>(null);
 const [activeSelectedMediaIndex, setActiveSelectedMediaIndex] = useState<number | null>(null);
 
@@ -619,12 +627,15 @@ function buildProductFormSnapshot() {
     primaryCategoryId: normalizeSnapshotValue(primaryCategoryId),
 
     selectedMedia: selectedMedia.map((item) => ({
-      fileName: item.file.name,
-      fileSize: item.file.size,
-      fileLastModified: item.file.lastModified,
-      name: normalizeSnapshotValue(item.name),
-      altText: normalizeSnapshotValue(item.altText),
-    })),
+  sourceType: item.sourceType || 'file',
+  fileName: item.file?.name || '',
+  fileSize: item.file?.size || 0,
+  fileLastModified: item.file?.lastModified || 0,
+  url: normalizeSnapshotValue(item.url),
+  mediaType: normalizeSnapshotValue(item.mediaType),
+  name: normalizeSnapshotValue(item.name),
+  altText: normalizeSnapshotValue(item.altText),
+})),
 
     mediaOrder: media.map((item) => normalizeSnapshotValue(getMediaId(item))),
   });
@@ -3074,6 +3085,215 @@ function getDefaultAltText(fileName: string) {
     .replace(/\s+/g, ' ')
     .trim();
 }
+function getYouTubeVideoId(url: string) {
+  const value = String(url || '').trim();
+
+  const patterns = [
+    /youtube\.com\/watch\?v=([^&]+)/i,
+    /youtube\.com\/embed\/([^?&/]+)/i,
+    /youtu\.be\/([^?&/]+)/i,
+    /youtube\.com\/shorts\/([^?&/]+)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const match = value.match(pattern);
+    if (match?.[1]) return match[1];
+  }
+
+  return '';
+}
+
+function getVimeoVideoId(url: string) {
+  const value = String(url || '').trim();
+  const match = value.match(/vimeo\.com\/(?:video\/)?([0-9]+)/i);
+
+  return match?.[1] || '';
+}
+
+function getExternalUrlMediaType(url: string): 'image' | 'video' {
+  const value = String(url || '').split('?')[0].toLowerCase();
+
+  if (
+    getYouTubeVideoId(url) ||
+    getVimeoVideoId(url) ||
+    value.match(/\.(mp4|webm|mov|avi|m4v)$/i)
+  ) {
+    return 'video';
+  }
+
+  return 'image';
+}
+
+function getExternalVideoEmbedUrl(url: string, autoPlay = false) {
+  const youtubeId = getYouTubeVideoId(url);
+
+  if (youtubeId) {
+    return autoPlay
+      ? `https://www.youtube.com/embed/${youtubeId}?autoplay=1&mute=1&loop=1&playlist=${youtubeId}&playsinline=1&controls=0&disablekb=1&modestbranding=1&rel=0&iv_load_policy=3`
+      : `https://www.youtube.com/embed/${youtubeId}?controls=0&disablekb=1&modestbranding=1&rel=0&iv_load_policy=3`;
+  }
+
+  const vimeoId = getVimeoVideoId(url);
+
+  if (vimeoId) {
+    return autoPlay
+      ? `https://player.vimeo.com/video/${vimeoId}?autoplay=1&muted=1&loop=1&background=1&controls=0&title=0&byline=0&portrait=0&dnt=1`
+      : `https://player.vimeo.com/video/${vimeoId}?controls=0&title=0&byline=0&portrait=0&dnt=1`;
+  }
+
+  return url;
+}
+
+
+function isEmbeddableExternalVideoUrl(url: string) {
+  return Boolean(getYouTubeVideoId(url) || getVimeoVideoId(url));
+}
+
+function getExternalVideoThumbnailUrl(url: string) {
+  const youtubeId = getYouTubeVideoId(url);
+
+  if (youtubeId) {
+    return `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg`;
+  }
+
+  const vimeoId = getVimeoVideoId(url);
+
+  if (vimeoId) {
+    return `https://vumbnail.com/${vimeoId}.jpg`;
+  }
+
+  return '';
+}
+
+function getMediaThumbnailUrl(item: any) {
+  const mediaUrl = getMediaUrl(item);
+  const externalThumbnail = getExternalVideoThumbnailUrl(mediaUrl);
+
+  return (
+    item?.thumbnail ||
+    item?.thumbnailUrl ||
+    item?.poster ||
+    item?.posterUrl ||
+    item?.coverImage ||
+    item?.coverImageUrl ||
+    item?.previewImage ||
+    item?.previewImageUrl ||
+    externalThumbnail ||
+    ''
+  );
+}
+function getSelectedMediaThumbnailUrl(item: SelectedMedia) {
+  const url = item.url || item.previewUrl || '';
+
+  if (getSelectedMediaType(item) === 'image') {
+    return item.previewUrl;
+  }
+
+  return getExternalVideoThumbnailUrl(url);
+}
+
+function CompactVideoThumbnail({
+  thumbnailUrl,
+  label = 'Video',
+  className = 'h-28',
+}: {
+  thumbnailUrl?: string;
+  label?: string;
+  className?: string;
+}) {
+  return (
+    <div
+      className={`relative flex w-full items-center justify-center overflow-hidden rounded-lg bg-gray-950 ${className}`}
+    >
+      {thumbnailUrl ? (
+        <img
+          src={thumbnailUrl}
+          draggable={false}
+          alt={label}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center bg-gray-900 text-xs font-semibold text-gray-400">
+          Video
+        </div>
+      )}
+
+      
+    </div>
+  );
+}
+
+function getDefaultNameFromUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    const lastPath = parsed.pathname.split('/').filter(Boolean).pop() || parsed.hostname;
+
+    return decodeURIComponent(lastPath)
+      .replace(/\.[^/.]+$/, '')
+      .replace(/[-_]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  } catch {
+    return 'External media';
+  }
+}
+
+function getSelectedMediaType(item: SelectedMedia) {
+  if (item.mediaType) return item.mediaType;
+  if (item.file?.type?.startsWith('video/')) return 'video';
+  if (item.file?.type?.startsWith('image/')) return 'image';
+
+  return getExternalUrlMediaType(item.url || item.previewUrl || '');
+}
+
+function getSelectedMediaLabel(item: SelectedMedia) {
+  return item.file?.name || item.name || item.url || 'Media';
+}
+
+function resetMediaUrlForm() {
+  setMediaUrlInput('');
+  setMediaUrlName('');
+  setMediaUrlAltText('');
+  setMediaUrlError('');
+  setShowMediaUrlForm(false);
+}
+
+function addMediaFromUrl() {
+  const url = mediaUrlInput.trim();
+
+  if (!url) {
+    setMediaUrlError('Please enter a media URL.');
+    return;
+  }
+
+  try {
+    new URL(url);
+  } catch {
+    setMediaUrlError('Please enter a valid URL.');
+    return;
+  }
+
+  const mediaType = getExternalUrlMediaType(url);
+  const defaultName = mediaUrlName.trim() || getDefaultNameFromUrl(url);
+  const defaultAltText = mediaUrlAltText.trim() || defaultName;
+
+  markUnsavedChanges();
+
+  setSelectedMedia((prev) => [
+    ...prev,
+    {
+      sourceType: 'url',
+      url,
+      previewUrl: url,
+      mediaType,
+      name: defaultName,
+      altText: defaultAltText,
+    },
+  ]);
+
+  resetMediaUrlForm();
+}
+
 
 function addMediaFiles(files: FileList | File[]) {
   const acceptedFiles = Array.from(files).filter(isAcceptedMediaFile);
@@ -3088,11 +3308,12 @@ function addMediaFiles(files: FileList | File[]) {
 
     for (const file of acceptedFiles) {
       const exists = next.some(
-        (item) =>
-          item.file.name === file.name &&
-          item.file.size === file.size &&
-          item.file.lastModified === file.lastModified,
-      );
+  (item) =>
+    item.sourceType !== 'url' &&
+    item.file?.name === file.name &&
+    item.file?.size === file.size &&
+    item.file?.lastModified === file.lastModified,
+);
 
       if (!exists) {
         next.push({
@@ -3230,7 +3451,12 @@ function selectAllUploadedMedia() {
   setSelectedUploadedMediaIds(Array.from(new Set(ids)));
 }
 function clearSelectedMedia() {
-  selectedMedia.forEach((item) => URL.revokeObjectURL(item.previewUrl));
+  selectedMedia.forEach((item) => {
+    if (item.sourceType !== 'url' && item.previewUrl) {
+      URL.revokeObjectURL(item.previewUrl);
+    }
+  });
+
   setSelectedMedia([]);
 }
 function formatUploadBytes(bytes: number) {
@@ -3268,6 +3494,90 @@ function updateMediaUploadProgressBytes(
     label,
   });
 }
+function buildCatalogMediaPayload(item: any, index: number) {
+  const mediaUrl = getMediaUrl(item);
+  const isVideo = isVideoMedia(item);
+
+  return {
+    url: mediaUrl,
+    name:
+      item?.name ||
+      item?.caption ||
+      item?.imageName ||
+      item?.title ||
+      item?.fileName ||
+      `Media ${index + 1}`,
+    altText:
+      item?.altText ||
+      item?.alt ||
+      item?.alt_text ||
+      item?.description ||
+      item?.name ||
+      '',
+    isPrimary: Boolean(item?.isPrimary || index === 0),
+    position: index,
+    colorName: item?.colorName || '',
+    cloudinaryPublicId: item?.cloudinaryPublicId || item?.publicId || '',
+    secureUrl: item?.secureUrl || item?.secure_url || mediaUrl,
+    width: Number(item?.width || 0),
+    height: Number(item?.height || 0),
+    format: item?.format || '',
+    resourceType: isVideo ? 'video' : 'image',
+    bytes: Number(item?.bytes || 0),
+    viewType: isVideo ? 'video' : item?.viewType || 'front',
+    caption: item?.caption || item?.name || '',
+  };
+}
+
+async function saveExternalUrlMedia(
+  targetProductId: string,
+  urlItems: SelectedMedia[],
+  uploadedMediaItems: any[] = [],
+) {
+  if (urlItems.length === 0) return;
+
+  const existingMediaPayload = media.map((item, index) =>
+    buildCatalogMediaPayload(item, index),
+  );
+
+  const uploadedMediaPayload = uploadedMediaItems.map((item, index) =>
+    buildCatalogMediaPayload(item, existingMediaPayload.length + index),
+  );
+
+  const basePosition = existingMediaPayload.length + uploadedMediaPayload.length;
+
+  const externalMediaPayload = urlItems.map((item, index) => {
+    const mediaType = getSelectedMediaType(item);
+    const url = item.url || item.previewUrl || '';
+
+    return {
+      url,
+      name: item.name || getDefaultNameFromUrl(url),
+      altText: item.altText || item.name || getDefaultNameFromUrl(url),
+      isPrimary:
+        existingMediaPayload.length === 0 &&
+        uploadedMediaPayload.length === 0 &&
+        index === 0,
+      position: basePosition + index,
+      colorName: '',
+      cloudinaryPublicId: '',
+      secureUrl: url,
+      width: 0,
+      height: 0,
+      format: '',
+      resourceType: mediaType,
+      bytes: 0,
+      viewType: mediaType === 'video' ? 'video' : 'front',
+      caption: item.name || getDefaultNameFromUrl(url),
+    };
+  });
+
+  await adminCatalogService.saveProductMediaUrls(targetProductId, [
+    ...existingMediaPayload,
+    ...uploadedMediaPayload,
+    ...externalMediaPayload,
+  ]);
+}
 async function uploadSelectedMedia(targetProductId = currentProductId) {
   await logToTerminal(
     'UPLOAD_MEDIA_CLICK',
@@ -3275,10 +3585,12 @@ async function uploadSelectedMedia(targetProductId = currentProductId) {
       targetProductId,
       selectedMediaCount: selectedMedia.length,
       selectedFiles: selectedMedia.map((item) => ({
-        name: item.file.name,
-        type: item.file.type,
-        size: item.file.size,
+        name: item.file?.name || item.name || item.url,
+        type: item.file?.type || item.mediaType || 'url',
+        size: item.file?.size || 0,
         altText: item.altText,
+        sourceType: item.sourceType || 'file',
+        url: item.url || '',
       })),
     },
     200,
@@ -3294,138 +3606,160 @@ async function uploadSelectedMedia(targetProductId = currentProductId) {
     return;
   }
 
-  const validMedia = selectedMedia.filter((item) => item.file instanceof File);
+  const fileMedia = selectedMedia.filter(
+    (item) => item.sourceType !== 'url' && item.file instanceof File,
+  );
 
-  if (validMedia.length === 0) {
-    setError('Selected media files are invalid. Please select files again.');
+  const urlMedia = selectedMedia.filter(
+    (item) => item.sourceType === 'url' && item.url,
+  );
+
+  if (fileMedia.length === 0 && urlMedia.length === 0) {
+    setError('Selected media is invalid. Please select files or add a valid URL.');
     return;
   }
 
-  setUploadingMedia(true);
-resetMediaUploadProgress();
-setError('');
+  setUploadingMedia(fileMedia.length > 0);
+  resetMediaUploadProgress();
+  setError('');
 
   try {
-    const imageItems = validMedia.filter((item) =>
-      item.file.type.startsWith('image/'),
+    const imageItems = fileMedia.filter((item) =>
+      item.file?.type.startsWith('image/'),
     );
 
-    const videoItems = validMedia.filter((item) =>
-      item.file.type.startsWith('video/'),
+    const videoItems = fileMedia.filter((item) =>
+      item.file?.type.startsWith('video/'),
     );
 
     let imageUploadResponse: any = null;
     let videoUploadResponse: any = null;
 
-    const imageBytesTotal = imageItems.reduce(
-      (total, item) => total + Number(item.file.size || 0),
-      0,
-    );
-    
-    const videoBytesTotal = videoItems.reduce(
-      (total, item) => total + Number(item.file.size || 0),
-      0,
-    );
-    
-    const totalUploadBytes = imageBytesTotal + videoBytesTotal;
-    
-    let uploadedImageBytes = 0;
-    let uploadedVideoBytes = 0;
-    
-    const updateCombinedUploadProgress = (label = 'Uploading media') => {
-      updateMediaUploadProgressBytes(
-        uploadedImageBytes + uploadedVideoBytes,
-        totalUploadBytes,
-        label,
+    let uploadedImages: any[] = [];
+    let uploadedVideos: any[] = [];
+
+    if (fileMedia.length > 0) {
+      const imageBytesTotal = imageItems.reduce(
+        (total, item) => total + Number(item.file?.size || 0),
+        0,
       );
-    };
-    
-    updateCombinedUploadProgress('Uploading media');
 
-    const [imageResult, videoResult] = await Promise.allSettled([
-      imageItems.length > 0
-        ? adminCatalogService.uploadImages(
-            targetProductId,
-            imageItems.map((item) => item.file),
-            (progressEvent: any) => {
-              uploadedImageBytes = Math.min(
-                Number(progressEvent?.loaded || 0),
-                imageBytesTotal,
-              );
-    
-              updateCombinedUploadProgress(
-                videoItems.length > 0 ? 'Uploading images and videos' : 'Uploading images',
-              );
-            },
-          )
-        : Promise.resolve(null),
-      videoItems.length > 0
-        ? adminCatalogService.uploadVideos(
-            targetProductId,
-            videoItems.map((item) => item.file),
-            (progressEvent: any) => {
-              uploadedVideoBytes = Math.min(
-                Number(progressEvent?.loaded || 0),
-                videoBytesTotal,
-              );
-    
-              updateCombinedUploadProgress(
-                imageItems.length > 0 ? 'Uploading images and videos' : 'Uploading videos',
-              );
-            },
-          )
-        : Promise.resolve(null),
-    ]);
-    
-    if (imageResult.status === 'fulfilled') {
-      imageUploadResponse = imageResult.value;
-    } else {
-      throw imageResult.reason;
+      const videoBytesTotal = videoItems.reduce(
+        (total, item) => total + Number(item.file?.size || 0),
+        0,
+      );
+
+      const totalUploadBytes = imageBytesTotal + videoBytesTotal;
+
+      let uploadedImageBytes = 0;
+      let uploadedVideoBytes = 0;
+
+      const updateCombinedUploadProgress = (label = 'Uploading media') => {
+        updateMediaUploadProgressBytes(
+          uploadedImageBytes + uploadedVideoBytes,
+          totalUploadBytes,
+          label,
+        );
+      };
+
+      updateCombinedUploadProgress('Uploading media');
+
+      const [imageResult, videoResult] = await Promise.allSettled([
+        imageItems.length > 0
+          ? adminCatalogService.uploadImages(
+              targetProductId,
+              imageItems.map((item) => item.file).filter(Boolean) as File[],
+              (progressEvent: any) => {
+                uploadedImageBytes = Math.min(
+                  Number(progressEvent?.loaded || 0),
+                  imageBytesTotal,
+                );
+
+                updateCombinedUploadProgress(
+                  videoItems.length > 0
+                    ? 'Uploading images and videos'
+                    : 'Uploading images',
+                );
+              },
+            )
+          : Promise.resolve(null),
+        videoItems.length > 0
+          ? adminCatalogService.uploadVideos(
+              targetProductId,
+              videoItems.map((item) => item.file).filter(Boolean) as File[],
+              (progressEvent: any) => {
+                uploadedVideoBytes = Math.min(
+                  Number(progressEvent?.loaded || 0),
+                  videoBytesTotal,
+                );
+
+                updateCombinedUploadProgress(
+                  imageItems.length > 0
+                    ? 'Uploading images and videos'
+                    : 'Uploading videos',
+                );
+              },
+            )
+          : Promise.resolve(null),
+      ]);
+
+      if (imageResult.status === 'fulfilled') {
+        imageUploadResponse = imageResult.value;
+      } else {
+        throw imageResult.reason;
+      }
+
+      if (videoResult.status === 'fulfilled') {
+        videoUploadResponse = videoResult.value;
+      } else {
+        throw videoResult.reason;
+      }
+
+      uploadedImages = normalizeMediaList(imageUploadResponse);
+      uploadedVideos = normalizeMediaList(videoUploadResponse);
+
+      for (let i = 0; i < uploadedImages.length; i += 1) {
+        const uploaded = uploadedImages[i];
+        const selected = imageItems[i];
+        const imageId = getMediaId(uploaded);
+
+        if (!imageId || !selected) continue;
+
+        await adminCatalogService.updateImage(imageId, {
+          name: selected.name || selected.file?.name || '',
+          altText: selected.altText || selected.name || selected.file?.name || '',
+          caption: selected.name || selected.file?.name || '',
+          viewType: 'front',
+          position: media.length + i,
+          colorName: '',
+          isPrimary: media.length === 0 && i === 0,
+        });
+      }
+
+      for (let i = 0; i < uploadedVideos.length; i += 1) {
+        const uploaded = uploadedVideos[i];
+        const selected = videoItems[i];
+        const videoId = getMediaId(uploaded);
+
+        if (!videoId || !selected) continue;
+
+        await adminCatalogService.updateImage(videoId, {
+          name: selected.name || selected.file?.name || '',
+          altText: selected.altText || selected.name || selected.file?.name || '',
+          caption: selected.name || selected.file?.name || '',
+          viewType: 'video',
+          position: media.length + imageItems.length + i,
+          colorName: '',
+          isPrimary: false,
+        });
+      }
     }
-    
-    if (videoResult.status === 'fulfilled') {
-      videoUploadResponse = videoResult.value;
-    } else {
-      throw videoResult.reason;
-    }
 
-    const uploadedImages = normalizeMediaList(imageUploadResponse);
-    const uploadedVideos = normalizeMediaList(videoUploadResponse);
-
-    for (let i = 0; i < uploadedImages.length; i += 1) {
-      const uploaded = uploadedImages[i];
-      const selected = imageItems[i];
-      const imageId = getMediaId(uploaded);
-
-      if (!imageId || !selected) continue;
-
-      await adminCatalogService.updateImage(imageId, {
-        name: selected.name || selected.file.name,
-        altText: selected.altText || selected.name || selected.file.name,
-        caption: selected.name || selected.file.name,
-        viewType: 'front',
-        position: media.length + i,
-        colorName: '',
-        isPrimary: media.length === 0 && i === 0,
-      });
-    }
-
-    for (let i = 0; i < uploadedVideos.length; i += 1) {
-      const uploaded = uploadedVideos[i];
-      const selected = videoItems[i];
-      const videoId = getMediaId(uploaded);
-
-      if (!videoId || !selected) continue;
-
-      await adminCatalogService.updateImage(videoId, {
-        name: selected.name || selected.file.name,
-        altText: selected.altText || selected.name || selected.file.name,
-        caption: selected.name || selected.file.name,
-        viewType: 'video',
-        position: media.length + imageItems.length + i,
-        colorName: '',
-        isPrimary: false,
-      });
+    if (urlMedia.length > 0) {
+      await saveExternalUrlMedia(targetProductId, urlMedia, [
+        ...uploadedImages,
+        ...uploadedVideos,
+      ]);
     }
 
     clearSelectedMedia();
@@ -3440,6 +3774,7 @@ setError('');
         targetProductId,
         imageCount: imageItems.length,
         videoCount: videoItems.length,
+        urlMediaCount: urlMedia.length,
         imageUploadResponse,
         videoUploadResponse,
       },
@@ -3461,11 +3796,11 @@ setError('');
     );
 
     setError(message);
-return;
-} finally {
-  setUploadingMedia(false);
-  resetMediaUploadProgress();
-}
+    return;
+  } finally {
+    setUploadingMedia(false);
+    resetMediaUploadProgress();
+  }
 }
 
 async function saveMediaOrder(showOwnLoader = true) {
@@ -4114,8 +4449,8 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
       
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:grid-cols-6">
           {selectedMedia.map((item, index) => (
-            <div
-            key={`${item.file.name}-${item.file.lastModified}-${index}`}
+  <div
+    key={`${item.file?.name || item.url || item.previewUrl}-${item.file?.lastModified || index}-${index}`}
             draggable
             onClick={() => {
               setActiveSelectedMediaIndex(index);
@@ -4155,21 +4490,19 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                   : 'border-gray-200'
               }`}
             >
-              {item.file.type.startsWith('video/') ? (
-                <video
-                src={item.previewUrl}
-                draggable={false}
-                className="h-28 w-full rounded-lg object-cover"
-              />
-              ) : (
-                <img
-  src={item.previewUrl}
-  draggable={false}
-  alt={item.altText || item.name}
-  className="h-28 w-full rounded-lg object-cover"
-/>
-              )}
-
+            {getSelectedMediaType(item) === 'video' ? (
+  <CompactVideoThumbnail
+    thumbnailUrl={getSelectedMediaThumbnailUrl(item)}
+    label={item.name || item.altText || 'Video'}
+  />
+) : (
+  <img
+    src={item.previewUrl}
+    draggable={false}
+    alt={item.altText || item.name}
+    className="h-28 w-full rounded-lg object-cover"
+  />
+)}
               <button
                 type="button"
                 onClick={(e) => {
@@ -4185,11 +4518,7 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                 New {index + 1}
               </span>
 
-              {item.file.type.startsWith('video/') && (
-                <span className="absolute inset-0 flex items-center justify-center text-white">
-                  ▶
-                </span>
-              )}
+              
             </div>
           ))}
 
@@ -4244,37 +4573,37 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                     : 'border-gray-200'
                 }`}
               >
-                {mediaUrl ? (
-                  isVideo ? (
-                    <video
-  src={mediaUrl}
-  draggable={false}
-  className="h-28 w-full rounded-lg object-cover"
-/>
-                  ) : (
-                    <img
-  src={mediaUrl}
-  draggable={false}
-  alt={
-    mediaEdits[getMediaEditKey(item, index)]?.altText ||
-    item?.altText ||
-    item?.alt ||
-    'media'
-  }
-  className="h-28 w-full rounded-lg object-cover"
-/>
-                  )
-                ) : (
-                  <div className="flex h-28 items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-400">
-                    Media
-                  </div>
-                )}
+              {mediaUrl ? (
+  isVideo ? (
+    <CompactVideoThumbnail
+      thumbnailUrl={getMediaThumbnailUrl(item)}
+      label={
+        mediaEdits[getMediaEditKey(item, index)]?.altText ||
+        item?.altText ||
+        item?.name ||
+        'Video'
+      }
+    />
+  ) : (
+    <img
+      src={mediaUrl}
+      draggable={false}
+      alt={
+        mediaEdits[getMediaEditKey(item, index)]?.altText ||
+        item?.altText ||
+        item?.alt ||
+        'media'
+      }
+      className="h-28 w-full rounded-lg object-cover"
+    />
+  )
+) : (
+  <div className="flex h-28 items-center justify-center rounded-lg bg-gray-100 text-xs text-gray-400">
+    Media
+  </div>
+)}
 
-                {isVideo && (
-                  <span className="absolute inset-0 flex items-center justify-center text-white">
-                    ▶
-                  </span>
-                )}
+                
 
                 {mediaId && (
                   <span
@@ -4344,24 +4673,35 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
   <div className="mt-5 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
     {(() => {
       const item = selectedMedia[activeSelectedMediaIndex];
-      const isVideo = item.file.type.startsWith('video/');
-
+const isVideo = getSelectedMediaType(item) === 'video';
       return (
         <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
           <div className="rounded-2xl bg-gray-50 p-4">
             {isVideo ? (
-              <video
-                src={item.previewUrl}
-                className="max-h-[520px] w-full rounded-xl object-contain"
-                controls
-              />
-            ) : (
-              <img
-                src={item.previewUrl}
-                alt={item.altText || item.name || 'media'}
-                className="max-h-[520px] w-full rounded-xl object-contain"
-              />
-            )}
+  isEmbeddableExternalVideoUrl(item.url || item.previewUrl || '') ? (
+    <iframe
+      src={getExternalVideoEmbedUrl(item.url || item.previewUrl || '', true)}
+      className="h-[420px] w-full rounded-xl bg-black"
+      allow="autoplay; encrypted-media; picture-in-picture"
+      allowFullScreen
+    />
+  ) : (
+    <video
+  src={item.previewUrl}
+  className="max-h-[520px] w-full rounded-xl object-contain"
+  autoPlay
+  muted
+  loop
+  playsInline
+/>
+  )
+) : (
+  <img
+    src={item.previewUrl}
+    alt={item.altText || item.name || 'media'}
+    className="max-h-[520px] w-full rounded-xl object-contain"
+  />
+)}
           </div>
 
           <div>
@@ -4426,8 +4766,8 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
 
               <div className="space-y-1 rounded-xl bg-gray-50 p-3 text-xs text-gray-500">
                 <p>Order: #{activeSelectedMediaIndex + 1}</p>
-                <p>File: {item.file.name}</p>
-                <p>Type: {isVideo ? 'Video' : 'Image'}</p>
+                <p>Source: {item.sourceType === 'url' ? item.url : item.file?.name}</p>
+<p>Type: {isVideo ? 'Video' : 'Image'}</p>
               </div>
 
               <div className="flex flex-wrap gap-2">
@@ -4458,13 +4798,25 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
               <div className="rounded-2xl bg-gray-50 p-4">
                 {mediaUrl ? (
-                  isVideo ? (
-                    <video
-                      src={mediaUrl}
-                      className="max-h-[520px] w-full rounded-xl object-contain"
-                      controls
-                    />
-                  ) : (
+  isVideo ? (
+    isEmbeddableExternalVideoUrl(mediaUrl) ? (
+      <iframe
+        src={getExternalVideoEmbedUrl(mediaUrl, true)}
+        className="h-[420px] w-full rounded-xl bg-black"
+        allow="autoplay; encrypted-media; picture-in-picture"
+        allowFullScreen
+      />
+    ) : (
+      <video
+  src={mediaUrl}
+  className="max-h-[520px] w-full rounded-xl object-contain"
+  autoPlay
+  muted
+  loop
+  playsInline
+/>
+    )
+  ) : (
                     <img
                       src={mediaUrl}
                       alt={mediaEdits[editKey]?.altText || 'media'}
@@ -4604,16 +4956,141 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
             </label>
 
             <button
-              type="button"
-              className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700"
-            >
-              Generate image
-            </button>
+  type="button"
+  onClick={() => {
+    setShowMediaUrlForm(true);
+    setMediaUrlError('');
+  }}
+  className="rounded-xl border border-purple-200 bg-purple-50 px-4 py-2 text-sm font-semibold text-purple-700"
+>
+  Add media from URL
+</button>
           </div>
 
           <p className="mt-3 text-sm text-gray-500">
             Drag and drop images, videos, 3D models, and files
           </p>
+          {showMediaUrlForm && (
+  <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4 shadow-sm">
+    <div className="mb-4 flex items-start justify-between gap-3">
+      <div>
+        <h3 className="text-sm font-bold text-gray-950">Add media from URL</h3>
+        <p className="mt-1 text-xs text-gray-500">
+          Supports image URL, YouTube URL, Vimeo URL, and direct video URL.
+        </p>
+      </div>
+
+      <button
+        type="button"
+        onClick={resetMediaUrlForm}
+        className="rounded-lg px-2 py-1 text-sm text-gray-500 hover:bg-gray-100"
+      >
+        Close
+      </button>
+    </div>
+
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_260px]">
+      <div className="space-y-3">
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-gray-700">
+            Image, YouTube, Vimeo, or direct video URL
+          </span>
+
+          <input
+            value={mediaUrlInput}
+            onChange={(e) => {
+              const value = e.target.value;
+              setMediaUrlInput(value);
+              setMediaUrlError('');
+
+              if (!mediaUrlName.trim()) {
+                setMediaUrlName(getDefaultNameFromUrl(value));
+              }
+
+              if (!mediaUrlAltText.trim()) {
+                setMediaUrlAltText(getDefaultNameFromUrl(value));
+              }
+            }}
+            className="h-11 w-full rounded-xl border border-gray-300 px-3 text-sm outline-none focus:border-black"
+            placeholder="https://"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-gray-700">
+            Name
+          </span>
+
+          <input
+            value={mediaUrlName}
+            onChange={(e) => setMediaUrlName(e.target.value)}
+            className="h-10 w-full rounded-xl border border-gray-300 px-3 text-sm outline-none focus:border-black"
+            placeholder="Media name"
+          />
+        </label>
+
+        <label className="block">
+          <span className="mb-1 block text-xs font-semibold text-gray-700">
+            Alt text
+          </span>
+
+          <textarea
+            value={mediaUrlAltText}
+            onChange={(e) => setMediaUrlAltText(e.target.value)}
+            className="min-h-20 w-full rounded-xl border border-gray-300 px-3 py-2 text-sm outline-none focus:border-black"
+            placeholder="Describe this media"
+          />
+        </label>
+
+        {mediaUrlError && (
+          <p className="text-xs font-medium text-red-600">{mediaUrlError}</p>
+        )}
+
+        <Button
+          type="button"
+          disabled={!mediaUrlInput.trim()}
+          onClick={addMediaFromUrl}
+        >
+          Add file
+        </Button>
+      </div>
+
+      <div className="rounded-2xl bg-gray-50 p-3">
+        <p className="mb-2 text-xs font-semibold text-gray-500">Preview</p>
+
+        {!mediaUrlInput.trim() ? (
+          <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-gray-300 text-xs text-gray-400">
+            Paste a URL to preview
+          </div>
+        ) : getExternalUrlMediaType(mediaUrlInput) === 'video' ? (
+          getYouTubeVideoId(mediaUrlInput) || getVimeoVideoId(mediaUrlInput) ? (
+            <iframe
+  src={getExternalVideoEmbedUrl(mediaUrlInput, true)}
+  className="h-40 w-full rounded-xl bg-black"
+  allow="autoplay; encrypted-media; picture-in-picture"
+  allowFullScreen
+/>
+          ) : (
+            <video
+  src={mediaUrlInput}
+  className="h-40 w-full rounded-xl bg-black object-contain"
+  autoPlay
+  muted
+  loop
+  playsInline
+/>
+          )
+        ) : (
+          <img
+            src={mediaUrlInput}
+            alt={mediaUrlAltText || mediaUrlName || 'media preview'}
+            className="h-40 w-full rounded-xl object-cover"
+          />
+        )}
+      </div>
+    </div>
+  </div>
+)}
         </div>
       </div>
 
@@ -4625,8 +5102,8 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
         ) : (
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 lg:grid-cols-6">
             {selectedMedia.map((item, index) => (
-              <div
-              key={`${item.file.name}-${item.file.lastModified}-${index}`}
+  <div
+    key={`${item.file?.name || item.url || item.previewUrl}-${item.file?.lastModified || index}-${index}`}
               draggable
               onDragStart={(e) => {
                 setSelectedMediaDragIndex(index);
@@ -4674,20 +5151,20 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                     </span>
                   </div>
 
-                  {item.file.type.startsWith('video/') ? (
-                    <video
-                      src={item.previewUrl}
-                      draggable={false}
-                      className="h-32 w-full object-cover"
-                    />
-                  ) : (
-                    <img
-                      src={item.previewUrl}
-                      draggable={false}
-                      alt={item.altText || item.name}
-                      className="h-32 w-full object-cover"
-                    />
-                  )}
+                  {getSelectedMediaType(item) === 'video' ? (
+  <CompactVideoThumbnail
+    thumbnailUrl={getSelectedMediaThumbnailUrl(item)}
+    label={item.name || item.altText || 'Video'}
+    className="h-32"
+  />
+) : (
+  <img
+    src={item.previewUrl}
+    draggable={false}
+    alt={item.altText || item.name}
+    className="h-32 w-full object-cover"
+  />
+)}
 
                   <button
                     type="button"
@@ -4703,11 +5180,10 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                 </div>
 
                 <p className="mt-2 truncate text-xs font-medium text-gray-700">
-                  {item.name || item.file.name}
-                </p>
+{item.name || item.file?.name || item.url}                </p>
 
                 <p className="text-xs text-gray-400">
-                  {item.file.type.startsWith('video/') ? 'Video' : 'Image'}
+                  {getSelectedMediaType(item) === 'video' ? 'Video' : 'Image'}
                 </p>
 
                 <input
