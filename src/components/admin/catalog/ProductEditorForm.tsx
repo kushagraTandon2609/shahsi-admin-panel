@@ -4586,15 +4586,31 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
               >
               {mediaUrl ? (
   isVideo ? (
-    <CompactVideoThumbnail
-      thumbnailUrl={getMediaThumbnailUrl(item)}
-      label={
-        mediaEdits[getMediaEditKey(item, index)]?.altText ||
-        item?.altText ||
-        item?.name ||
-        'Video'
-      }
-    />
+    getMediaThumbnailUrl(item) ? (
+      <CompactVideoThumbnail
+        thumbnailUrl={getMediaThumbnailUrl(item)}
+        label={
+          mediaEdits[getMediaEditKey(item, index)]?.altText ||
+          item?.altText ||
+          item?.name ||
+          'Video'
+        }
+      />
+    ) : (
+      <video
+        src={mediaUrl}
+        draggable={false}
+        muted
+        playsInline
+        preload="metadata"
+        onLoadedMetadata={(e) => {
+          try {
+            e.currentTarget.currentTime = 0.1;
+          } catch {}
+        }}
+        className="h-28 w-full rounded-lg object-cover"
+      />
+    )
   ) : (
     <img
       src={mediaUrl}
