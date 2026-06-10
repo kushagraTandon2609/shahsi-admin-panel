@@ -694,6 +694,17 @@ function renderCollectionPickerField(fieldKey: string, label: string) {
           </div>
 
           <div className="border-t border-gray-200 bg-gray-50 p-3 text-right">
+
+            <button
+      type="button"
+      onClick={() => {
+        setActiveCollectionField('');
+        setCollectionSearch('');
+      }}
+      className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+    >
+      Close
+    </button>
   <button
     type="button"
     onClick={() => {
@@ -880,6 +891,16 @@ function renderMultiCollectionPickerField(fieldKey: string, label: string) {
           </div>
 
           <div className="flex items-center justify-between border-t border-gray-200 bg-gray-50 p-3">
+            <button
+      type="button"
+      onClick={() => {
+        setActiveCollectionField('');
+        setCollectionSearch('');
+      }}
+      className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+    >
+      Close
+    </button>
             <p className="text-sm text-gray-500">
               {selectedValues.length} selected
             </p>
