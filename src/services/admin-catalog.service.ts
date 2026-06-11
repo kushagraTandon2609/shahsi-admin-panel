@@ -56,7 +56,33 @@ export const adminCatalogService = {
     const res = await api.get('/catalog', { params });
     return res.data;
   },
+uploadEditorMedia: async (
+  files: File[],
+  options?: {
+    productId?: string;
+    folder?: string;
+  },
+) => {
+  const formData = new FormData();
 
+  files.forEach((file) => {
+    formData.append('files', file);
+  });
+
+  formData.append('folder', options?.folder || 'product-descriptions');
+
+  if (options?.productId) {
+    formData.append('productId', options.productId);
+  }
+
+  const res = await api.post('/admin/editor-media/upload', formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+
+  return res.data;
+},
   updateInventory: async (
     productId: string,
     payload: {

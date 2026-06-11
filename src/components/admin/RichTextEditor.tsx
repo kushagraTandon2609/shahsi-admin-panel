@@ -36,12 +36,20 @@ PaintBucket,
   X,
 } from 'lucide-react';
 
+type UploadedEditorMedia = {
+  url: string;
+  type: 'image' | 'video';
+  name?: string;
+  altText?: string;
+};
+
 type RichTextEditorProps = {
   label?: string;
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   minHeight?: number;
+  onUploadMedia?: (files: File[]) => Promise<UploadedEditorMedia[]>;
 };
 
 type LinkModalState = {
@@ -465,6 +473,7 @@ export function RichTextEditor({
   onChange,
   placeholder = 'Write product description...',
   minHeight = 300,
+  onUploadMedia,
 }: RichTextEditorProps) {
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const videoInputRef = useRef<HTMLInputElement | null>(null);
@@ -586,63 +595,40 @@ LinkExtension.configure({
   return false;
 },
       handleDrop(view, event) {
-        const files = Array.from(event.dataTransfer?.files || []);
-        const mediaFile = files.find(
-          (file) => file.type.startsWith('image/') || file.type.startsWith('video/'),
-        );
+  const files = Array.from(event.dataTransfer?.files || []);
+  const mediaFile = files.find(
+    (file) => file.type.startsWith('image/') || file.type.startsWith('video/'),
+  );
 
-        if (!mediaFile) return false;
+  if (!mediaFile) return false;
 
-        event.preventDefault();
+  event.preventDefault();
 
-        const url = URL.createObjectURL(mediaFile);
-        const coordinates = view.posAtCoords({
-          left: event.clientX,
-          top: event.clientY,
-        });
+  const coordinates = view.posAtCoords({
+    left: event.clientX,
+    top: event.clientY,
+  });
 
-        if (coordinates) {
-          view.dispatch(view.state.tr.setSelection(
-            // @ts-expect-error ProseMirror selection class internal typing issue
-            view.state.selection.constructor.near(view.state.doc.resolve(coordinates.pos)),
-          ));
-        }
+  if (coordinates) {
+    view.dispatch(
+      view.state.tr.setSelection(
+        // @ts-expect-error ProseMirror selection class internal typing issue
+        view.state.selection.constructor.near(view.state.doc.resolve(coordinates.pos)),
+      ),
+    );
+  }
 
-        if (mediaFile.type.startsWith('image/')) {
-          editor
-  ?.chain()
-  .focus()
-  .insertContent({
-    type: 'image',
-    attrs: {
-      src: url,
-      alt: mediaFile.name,
-      title: mediaFile.name,
-      size: 'original',
-      customWidth: '',
-      align: 'left',
-      wrapText: false,
-      spacingTop: '0',
-      spacingRight: '0',
-      spacingBottom: '0',
-      spacingLeft: '0',
-    },
-  })
-  .run();
-        }
+  insertLocalMedia(
+    {
+      0: mediaFile,
+      length: 1,
+      item: (index: number) => (index === 0 ? mediaFile : null),
+    } as unknown as FileList,
+    mediaFile.type.startsWith('image/') ? 'image' : 'video',
+  );
 
-        if (mediaFile.type.startsWith('video/')) {
-          editor?.chain().focus().insertContent({
-            type: 'safeVideo',
-            attrs: {
-              src: url,
-              title: mediaFile.name,
-            },
-          }).run();
-        }
-
-        return true;
-      },
+  return true;
+},
     },
     onUpdate({ editor }) {
       const html = editor.getHTML();
@@ -674,10 +660,14 @@ useEffect(() => {
     const nextHtml = value || '';
 
     if (nextHtml !== currentHtml) {
-      editor.commands.setContent(nextHtml, {
-  emitUpdate: false,
-});
-    }
+  queueMicrotask(() => {
+    if (editor.isDestroyed) return;
+
+    editor.commands.setContent(nextHtml, {
+      emitUpdate: false,
+    });
+  });
+}
   }, [value, editor, htmlMode]);
 
   useEffect(() => {
@@ -847,81 +837,95 @@ function removeSelectedMediaNode() {
     closeLinkModal();
   }
 
-  function insertLocalMedia(files: FileList | null, type: 'image' | 'video') {
-    if (!editor || !files?.length) return;
+  async function insertLocalMedia(files: FileList | null, type: 'image' | 'video') {
+  if (!editor || !files?.length) return;
 
-    const file = files[0];
+  const file = files[0];
 
-    if (type === 'image' && !file.type.startsWith('image/')) {
-      alert('Please select an image file.');
-      return;
-    }
-
-    if (type === 'video' && !file.type.startsWith('video/')) {
-      alert('Please select a video file.');
-      return;
-    }
-
-    const objectUrl = URL.createObjectURL(file);
-
-    if (!isSafeImageOrVideoUrl(objectUrl)) {
-      alert('Invalid media URL.');
-      return;
-    }
-
-    if (type === 'image') {
-      editor
-  .chain()
-  .focus()
-  .insertContent({
-    type: 'image',
-    attrs: {
-      src: objectUrl,
-      alt: file.name,
-      title: file.name,
-      size: 'original',
-      customWidth: '',
-      align: 'left',
-      wrapText: false,
-      spacingTop: '0',
-      spacingRight: '0',
-      spacingBottom: '0',
-      spacingLeft: '0',
-    },
-  })
-  .run();
-    }
-
-    if (type === 'video') {
-      editor
-  .chain()
-  .focus()
-  .insertContent({
-    type: 'safeVideo',
-    attrs: {
-      src: objectUrl,
-      title: file.name,
-      altText: file.name,
-      size: 'original',
-      customWidth: '',
-      align: 'left',
-      wrapText: false,
-      spacingTop: '0',
-      spacingRight: '0',
-      spacingBottom: '0',
-      spacingLeft: '0',
-    },
-  })
-  .run();
-    }
+  if (type === 'image' && !file.type.startsWith('image/')) {
+    alert('Please select an image file.');
+    return;
   }
+
+  if (type === 'video' && !file.type.startsWith('video/')) {
+    alert('Please select a video file.');
+    return;
+  }
+
+  if (!onUploadMedia) {
+    alert('Editor media upload is not connected. Please save/upload through backend media API.');
+    return;
+  }
+
+  try {
+    const uploadedItems = await onUploadMedia([file]);
+    const uploaded = uploadedItems[0];
+
+    if (!uploaded?.url) {
+      alert('Media uploaded but URL was not returned.');
+      return;
+    }
+
+    if (uploaded.type === 'image') {
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: 'image',
+          attrs: {
+            src: uploaded.url,
+            alt: uploaded.altText || uploaded.name || file.name,
+            title: uploaded.name || file.name,
+            size: 'original',
+            customWidth: '',
+            align: 'left',
+            wrapText: false,
+            spacingTop: '0',
+            spacingRight: '0',
+            spacingBottom: '0',
+            spacingLeft: '0',
+          },
+        })
+        .run();
+    }
+
+    if (uploaded.type === 'video') {
+      editor
+        .chain()
+        .focus()
+        .insertContent({
+          type: 'safeVideo',
+          attrs: {
+            src: uploaded.url,
+            title: uploaded.name || file.name,
+            altText: uploaded.altText || uploaded.name || file.name,
+            size: 'original',
+            customWidth: '',
+            align: 'left',
+            wrapText: false,
+            spacingTop: '0',
+            spacingRight: '0',
+            spacingBottom: '0',
+            spacingLeft: '0',
+          },
+        })
+        .run();
+    }
+  } catch (err: any) {
+    alert(err?.message || 'Media upload failed.');
+  }
+}
 
   function toggleHtmlMode() {
     if (!editor) return;
 
     if (htmlMode) {
-      editor.commands.setContent(htmlValue || '', {
-  emitUpdate: false,
+      queueMicrotask(() => {
+  if (editor.isDestroyed) return;
+
+  editor.commands.setContent(htmlValue || '', {
+    emitUpdate: false,
+  });
 });
       onChange(htmlValue || '');
       setHtmlMode(false);

@@ -4336,20 +4336,77 @@ onSubmit={(e) => e.preventDefault()}                className="space-y-4"
                 />
 
                 <RichTextEditor
-                  label="Description"
-                  value={basicForm.description}
-                  onChange={(value) => {
-                    updateForm(setBasicForm, 'description', value);
+  label="Description"
+  value={basicForm.description}
+  onChange={(value) => {
+    updateForm(setBasicForm, 'description', value);
 
-                    if (!seoForm.metaDescription) {
-                      setSeoForm((prev) => ({
-                        ...prev,
-                        metaDescription: stripHtml(value).slice(0, 160),
-                      }));
-                    }
-                  }}
-                  minHeight={260}
-                />
+    if (!seoForm.metaDescription) {
+      setSeoForm((prev) => ({
+        ...prev,
+        metaDescription: stripHtml(value).slice(0, 160),
+      }));
+    }
+  }}
+  minHeight={260}
+  onUploadMedia={async (files) => {
+  const uploadRes = await adminCatalogService.uploadEditorMedia(files, {
+    productId: currentProductId || undefined,
+    folder: 'product-descriptions',
+  });
+
+  const uploadedItems = Array.isArray(uploadRes?.items)
+    ? uploadRes.items
+    : Array.isArray(uploadRes?.data?.items)
+      ? uploadRes.data.items
+      : Array.isArray(uploadRes)
+        ? uploadRes
+        : [];
+
+  const normalizedItems = uploadedItems
+    .map((item: any, index: number) => {
+      const file = files[index];
+
+      const url =
+        item?.url ||
+        item?.secureUrl ||
+        item?.secure_url ||
+        item?.publicUrl ||
+        item?.public_url ||
+        item?.location ||
+        item?.path ||
+        '';
+
+      if (!url) return null;
+
+      const mimeType = item?.mimeType || item?.mimetype || file?.type || '';
+      const type =
+        item?.type === 'video' || mimeType.startsWith('video/')
+          ? 'video'
+          : 'image';
+
+      return {
+        url,
+        type,
+        name: item?.name || item?.fileName || item?.filename || file?.name || 'Media',
+        altText:
+          item?.altText ||
+          item?.alt ||
+          item?.name ||
+          item?.fileName ||
+          file?.name ||
+          'Product media',
+      };
+    })
+    .filter(Boolean);
+
+  if (normalizedItems.length === 0) {
+    throw new Error('Editor media uploaded but no public URL was returned.');
+  }
+
+  return normalizedItems;
+}}
+/>
 
                 
               </form>
